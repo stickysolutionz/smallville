@@ -46,17 +46,25 @@ Running with a long interval (e.g. 180s) and a modest timestep (e.g. 15 minutes)
 
 ## Getting started
 
-**Prerequisites:** Java 17, [Maven](https://maven.apache.org/), Node 18+, and a [DeepSeek API key](https://platform.deepseek.com/) (or any other OpenAI-compatible API key, see [Configuration](#configuration)).
+**Prerequisites:** Java 17, [Maven](https://maven.apache.org/), and Node 18+.
 
-### 1. Build and run the server
+### 1. Get a DeepSeek API key
+1. Sign up / log in at [platform.deepseek.com](https://platform.deepseek.com/)
+2. Go to **API Keys** in the left sidebar and click **Create new API key**
+3. Copy the key (starts with `sk-...`) — you won't be able to view it again after closing the dialog
+
+Using a different OpenAI-compatible provider (OpenAI, a local model server, etc.) instead? Grab a key/endpoint from them and see [Configuration](#configuration).
+
+### 2. Build and run the server
+The key is only ever passed in as a command-line argument below — it isn't read from an environment variable or written to any config file, so there's nothing to leak if you share your clone of this repo.
 ```
 cd smallville
 mvn -DskipTests package
-java -jar target/smallville-1.3.0-shaded.jar --api-key <YOUR_API_KEY> --port 8080
+java -jar target/smallville-1.3.0-shaded.jar --api-key sk-your-key-here --port 8080
 ```
 The server starts on port 8080 (override with `--port`).
 
-### 2. Run the dashboard
+### 3. Run the dashboard
 ```
 cd dashboard
 npm install
@@ -64,7 +72,7 @@ npm run dev
 ```
 Open http://localhost:3000. The dashboard talks to the server on `localhost:8080` — no extra configuration needed.
 
-### 3. Create your town
+### 4. Create your town
 Use the dashboard to add locations and agents (or generate a personality with one click), then hit Start in the Simulation panel.
 
 > **Note on persistence:** the server keeps all world state in memory only — there's currently no database backing it, so restarting the server loses agents, locations, and memory streams. If you need to survive a restart, save your agents'/locations' definitions somewhere yourself before stopping the server, and recreate them via the API afterward.
