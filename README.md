@@ -6,6 +6,12 @@ Generative agents are virtual characters that store memories and dynamically rea
 
 This is a fork of [nickm980/smallville](https://github.com/nickm980/smallville), a Java implementation of the technique from the paper [_Generative Agents: Interactive Simulacra of Human Behavior_](https://arxiv.org/pdf/2304.03442.pdf). This fork keeps the original simulation engine but changes the LLM backend and replaces the tooling around it with a full interactive dashboard, so you can actually watch and steer a town of agents instead of only driving them through the HTTP API.
 
+## Screenshots
+
+| Agents dashboard | Conversations |
+| --- | --- |
+| ![Dashboard showing a list of agents with their location, current activity, and emoji, plus simulation controls](docs/screenshots/dashboard.png) | ![Conversations feed showing grouped, timestamped conversations between agents](docs/screenshots/conversations.png) |
+
 ## What's different in this fork
 
 **Runs on DeepSeek, not OpenAI.** The server talks to any OpenAI-compatible chat completions endpoint — this fork points it at DeepSeek (`deepseek-v4-pro`) by default, which is cheaper and doesn't require an OpenAI key. Swapping to any other compatible provider (OpenAI, a local model server, etc.) is a two-line change in `config.yaml`.
