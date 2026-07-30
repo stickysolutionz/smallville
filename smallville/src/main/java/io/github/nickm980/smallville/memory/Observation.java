@@ -19,6 +19,12 @@ public class Observation extends Memory implements TemporalMemory {
      * reactable observation
      */
     private boolean isGenerated;
+    /**
+     * True when this observation is a line of dialog copied into a
+     * participant's memory stream from a conversation, rather than an
+     * observation of an activity/event.
+     */
+    private boolean isDialog;
 
     public Observation(String description) {
 	super(description);
@@ -38,6 +44,14 @@ public class Observation extends Memory implements TemporalMemory {
 
     public void setReactable(boolean isGenerated) {
 	this.isGenerated = isGenerated;
+    }
+
+    public boolean isDialog() {
+	return isDialog;
+    }
+
+    public void setDialog(boolean isDialog) {
+	this.isDialog = isDialog;
     }
 
     @Override

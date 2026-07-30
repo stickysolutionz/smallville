@@ -80,6 +80,10 @@ public class LocalNLP implements NLPCoreUtils {
 
     @Override
     public String convertToPastTense(String sentence) {
+	if (sentence == null || sentence.isEmpty()) {
+	    return sentence;
+	}
+
 	// Most of the responses either contain am or will, this is a hacky fix but it
 	// will work for most plans.
 	if (sentence.contains(" am ")) {

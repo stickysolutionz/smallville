@@ -51,7 +51,11 @@ public class UpdateConversation extends AgentUpdate {
 	List<Observation> memories = conversation
 	    .getDialog()
 	    .stream()
-	    .map(dialog -> new Observation(dialog.getMessage()))
+	    .map(dialog -> {
+		Observation dialogMemory = new Observation(dialog.getMessage());
+		dialogMemory.setDialog(true);
+		return dialogMemory;
+	    })
 	    .collect(Collectors.toList());
 
 	agent.getMemoryStream().addAll(memories);

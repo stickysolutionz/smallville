@@ -120,6 +120,10 @@ public class MemoryStream {
 	this.memories.add(memory);
     }
 
+    public boolean remove(Memory memory) {
+	return this.memories.remove(memory);
+    }
+
     public void setPlans(List<Plan> plans, PlanType type) {
 	List<Plan> removed = getPlans(type);
 	memories.removeAll(removed);

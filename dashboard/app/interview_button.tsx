@@ -1,33 +1,15 @@
 'use client';
 
-import { ChatBubbleLeftEllipsisIcon } from '@heroicons/react/24/outline';
-import { usePathname, useRouter } from 'next/navigation';
-import { FormEventHandler, useEffect, useState, useTransition } from 'react';
+import { ChatBubbleLeftEllipsisIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { useEffect, useRef, useState } from 'react';
+import { Select, SelectItem, Button, Text } from '@tremor/react';
+import { interview } from '../lib/smallville';
 
 export const dynamic = 'force-dynamic';
 
-interface AgentListBoxProps {
-  people: {
-    name: string;
-  }[];
-  disabled?: boolean
-  onChange: FormEventHandler<HTMLDivElement> | undefined;
-}
-
-import { Select, SelectItem } from '@tremor/react';
-import QuickModal from './modal';
-import { interview } from '../lib/smallville';
-
-export function AgentListBox(props: AgentListBoxProps) {
-  return (
-    <div className="max-w-sm mx-auto space-y-6">
-      <Select onChange={props.onChange} disabled={props.disabled}>
-        {props.people.map((item) => (
-          <SelectItem key={item.name} value={item.name}></SelectItem>
-        ))}
-      </Select>
-    </div>
-  );
+interface ChatMessage {
+  sender: 'user' | 'agent';
+  text: string;
 }
 
 export default function InterviewInput({
@@ -35,118 +17,140 @@ export default function InterviewInput({
 }: {
   agents: { name: string }[];
 }) {
-  const [isPending, setPending] = useState(false)
-  const [isOpen, setIsOpen] = useState(false);
-  const [answer, setAnswer] = useState('Loading...');
+  const [selectedAgent, setSelectedAgent] = useState(agents[0]?.name || '');
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [isPending, setPending] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const selectedAgentRef = useRef(selectedAgent);
 
-  function openModal() {
-    setIsOpen(true);
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [messages, isPending]);
+
+  function handleAgentChange(agent: string) {
+    selectedAgentRef.current = agent;
+    setSelectedAgent(agent);
+    setMessages([]);
   }
 
-  let currentAgent = agents[0] != undefined ? agents[0].name : "";
-
-  function handleChange(agent: any) {
-    console.log(agent);
-    console.log("agent change")
-    currentAgent = agent;
+  function handleClear() {
+    setMessages([]);
   }
 
-  async function handleSearch(question: any) {
-    let answer = 'answer to a question';
+  async function handleSend() {
+    const question = input.trim();
+    if (!question || !selectedAgent || isPending) return;
 
-    if (currentAgent == undefined) {
-      answer = 'Please choose an agent before asking an interview question';
-      console.log(currentAgent)
-      console.log("this")
-      openModal();
-      setAnswer(answer);
-      return;
+    const agentAtSendTime = selectedAgent;
+
+    setMessages((prev) => [...prev, { sender: 'user', text: question }]);
+    setInput('');
+    setPending(true);
+
+    const answer = await interview(agentAtSendTime, question);
+
+    // If the user switched agents while this was in flight, drop the stale
+    // answer instead of appending it to the wrong conversation.
+    if (selectedAgentRef.current === agentAtSendTime) {
+      setMessages((prev) => [...prev, { sender: 'agent', text: answer }]);
     }
-    setPending(true)
 
-    answer = await interview(currentAgent, question)
-    console.log('answer ' + answer);
-    openModal();
-    setAnswer(answer);
-    setPending(false)
+    setPending(false);
   }
 
   return (
-    <>
-      <div className="flex space-x-4 wrap">
-        <AgentListBox
-          people={agents}
-          onChange={(e) => {
-            handleChange(e);
-          }}
-          disabled={isPending}
-        ></AgentListBox>
-
-        <div className="relative flex-1">
-          <label htmlFor="search" className="sr-only">
-            Interview
-          </label>
-          <div className="rounded-md shadow-sm">
-            <div
-              className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"
-              aria-hidden="true"
-            >
-              <ChatBubbleLeftEllipsisIcon
-                className="mr-3 h-10 w-4 text-gray-400"
-                aria-hidden="true"
-              />
-            </div>
-            <input
-              type="text"
-              name="interview"
-              id="interview"
-              autoComplete="off"
-              disabled={isPending}
-              className="h-10 block w-full rounded-md border border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-              placeholder="What is your name?"
-              spellCheck={false}
-              onKeyDown={async (e) => {
-                if (e.key === 'Enter') {
-                  await handleSearch(e.currentTarget.value);
-                }
-              }}
-            />
-          </div>
-
-          {isPending && (
-            <div className="absolute right-0 top-0 bottom-0 flex items-center justify-center">
-              <svg
-                className="animate-spin -ml-1 mr-3 h-5 w-5 text-gray-700"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                />
-              </svg>
-            </div>
-          )}
+    <div>
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-56">
+          <Select
+            value={selectedAgent}
+            onValueChange={handleAgentChange}
+            disabled={isPending}
+            enableClear={false}
+          >
+            {agents.map((agent) => (
+              <SelectItem key={agent.name} value={agent.name}>
+                {agent.name}
+              </SelectItem>
+            ))}
+          </Select>
         </div>
+        <Button
+          icon={TrashIcon}
+          variant="secondary"
+          color="gray"
+          disabled={messages.length === 0}
+          onClick={handleClear}
+        >
+          Clear chat
+        </Button>
       </div>
 
-      <QuickModal
-        setIsOpen={setIsOpen}
-        isOpen={isOpen}
-        title={'Interview with ' + currentAgent}
+      <div
+        ref={scrollRef}
+        className="h-80 overflow-y-auto rounded-md border border-gray-100 bg-gray-50 p-4 space-y-3"
       >
-        <p>{answer}</p>
-      </QuickModal>
-    </>
+        {messages.length === 0 && (
+          <Text className="text-gray-400">
+            {selectedAgent
+              ? `Ask ${selectedAgent} something to start the conversation.`
+              : 'Create a character first.'}
+          </Text>
+        )}
+
+        {messages.map((message, i) => (
+          <div
+            key={i}
+            className={message.sender === 'user' ? 'text-right' : 'text-left'}
+          >
+            <div
+              className={
+                'inline-block max-w-[80%] rounded-lg px-3 py-2 text-sm ' +
+                (message.sender === 'user'
+                  ? 'bg-indigo-500 text-white'
+                  : 'bg-white border border-gray-200 text-gray-800')
+              }
+            >
+              {message.sender === 'agent' && (
+                <div className="text-xs font-medium text-gray-400 mb-0.5">
+                  {selectedAgent}
+                </div>
+              )}
+              {message.text}
+            </div>
+          </div>
+        ))}
+
+        {isPending && (
+          <Text className="text-gray-400">{selectedAgent} is thinking...</Text>
+        )}
+      </div>
+
+      <div className="relative mt-3">
+        <div
+          className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"
+          aria-hidden="true"
+        >
+          <ChatBubbleLeftEllipsisIcon
+            className="h-4 w-4 text-gray-400"
+            aria-hidden="true"
+          />
+        </div>
+        <input
+          type="text"
+          autoComplete="off"
+          disabled={isPending || !selectedAgent}
+          className="h-10 block w-full rounded-md border border-gray-200 pl-9 pr-4 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm disabled:opacity-50"
+          placeholder={selectedAgent ? `Message ${selectedAgent}` : 'Message...'}
+          spellCheck={false}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleSend();
+          }}
+        />
+      </div>
+    </div>
   );
 }

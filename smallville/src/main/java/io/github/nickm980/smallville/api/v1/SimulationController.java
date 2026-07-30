@@ -22,6 +22,7 @@ import com.google.gson.reflect.TypeToken;
 import io.github.nickm980.smallville.analytics.Analytics;
 import io.github.nickm980.smallville.api.v1.dto.*;
 import io.github.nickm980.smallville.entities.SimulationTime;
+import io.javalin.community.routing.annotations.Delete;
 import io.javalin.community.routing.annotations.Endpoints;
 import io.javalin.community.routing.annotations.Get;
 import io.javalin.community.routing.annotations.Param;
@@ -34,12 +35,14 @@ public final class SimulationController {
     private MustacheFactory mf;
     private Analytics analytics;
     private SimulationService service;
+    private SimulationRunner runner;
     private Gson gson = new Gson();
 
     public SimulationController(Analytics analytics, SimulationService service, MustacheFactory mf) {
 	this.mf = mf;
 	this.analytics = analytics;
 	this.service = service;
+	this.runner = new SimulationRunner(service);
     }
 
     
@@ -68,13 +71,18 @@ public final class SimulationController {
     }
 
     @Get("/memories/{name}")
-    public void getMemoryByName(Context ctx, @Param String name) {
+    public void getMemoryByName(Context ctx) {
 	Map<String, Object> model = new HashMap<>();
-	model.put("memories", service.getMemoriesOfAgent(name));
+	model.put("memories", service.getMemoriesOfAgent(ctx.pathParam("name")));
 
 	Mustache mustache = mf.compile("agent.mustache");
 	String output = mustache.execute(new StringWriter(), model).toString();
 	ctx.html(output);
+    }
+
+    @Get("/conversations")
+    public void getAllConversations(Context ctx) {
+	ctx.json(Map.of("conversations", service.getAllConversations()));
     }
 
     @Get("/info")
@@ -93,8 +101,8 @@ public final class SimulationController {
     }
 
     @Get("/agents/{name}")
-    public void getAgentsByName(Context ctx, @Param String name) {
-	AgentStateResponse res = service.getAgentState(name);
+    public void getAgentsByName(Context ctx) {
+	AgentStateResponse res = service.getAgentState(ctx.pathParam("name"));
 	ctx.json(res);
     }
 
@@ -110,6 +118,12 @@ public final class SimulationController {
 	ctx.json(Map.of("answer", res));
     }
 
+    @Post("/agents/generate")
+    public void generateCharacter(Context ctx) {
+	GeneratedCharacterResponse result = service.generateCharacter();
+	ctx.json(result);
+    }
+
     @Post("/agents")
     public void createAgent(Context ctx) {
 	CreateAgentRequest request = ctx
@@ -122,6 +136,42 @@ public final class SimulationController {
 
 	service.createAgent(request);
 	ctx.json(Map.of("success", true));
+    }
+
+    @Delete("/agents/{name}")
+    public void deleteAgent(Context ctx) {
+	service.deleteAgent(ctx.pathParam("name"));
+	ctx.json(Map.of("success", true));
+    }
+
+    @Get("/agents/{name}/characteristics")
+    public void getCharacteristics(Context ctx) {
+	ctx.json(Map.of("characteristics", service.getCharacteristics(ctx.pathParam("name"))));
+    }
+
+    @Get("/agents/{name}/diary")
+    public void getDiary(Context ctx) {
+	ctx.json(Map.of("diary", service.getDiary(ctx.pathParam("name"))));
+    }
+
+    @Post("/agents/{name}/characteristics")
+    public void addCharacteristic(Context ctx) throws JsonMappingException, JsonProcessingException {
+	String name = ctx.pathParam("name");
+	ObjectMapper objectMapper = new ObjectMapper();
+	JsonNode rootNode = objectMapper.readTree(ctx.body());
+	String description = rootNode.get("description").asText();
+
+	service.addCharacteristic(name, description);
+	ctx.json(Map.of("success", true, "characteristics", service.getCharacteristics(name)));
+    }
+
+    @Delete("/agents/{name}/characteristics/{index}")
+    public void removeCharacteristic(Context ctx) {
+	String name = ctx.pathParam("name");
+	int index = Integer.parseInt(ctx.pathParam("index"));
+
+	service.removeCharacteristic(name, index);
+	ctx.json(Map.of("success", true, "characteristics", service.getCharacteristics(name)));
     }
 
     @Post("/locations")
@@ -187,5 +237,53 @@ public final class SimulationController {
 	int minutes = Integer.valueOf(request.getNumOfMinutes());
 	SimulationTime.setStep(Duration.ofMinutes(minutes));
 	ctx.json(Map.of("success", true, "message", "Timestep updated to " + minutes + " per update"));
+    }
+
+    @Post("/simulation/start")
+    public void startSimulation(Context ctx) throws JsonMappingException, JsonProcessingException {
+	double intervalSeconds = 15;
+
+	if (exists(ctx.body())) {
+	    ObjectMapper objectMapper = new ObjectMapper();
+	    JsonNode rootNode = objectMapper.readTree(ctx.body());
+
+	    if (rootNode.has("intervalSeconds")) {
+		intervalSeconds = rootNode.get("intervalSeconds").asDouble();
+	    }
+	}
+
+	try {
+	    runner.start(intervalSeconds);
+	} catch (IllegalArgumentException e) {
+	    ctx.status(400).json(Map.of("success", false, "message", e.getMessage()));
+	    return;
+	}
+
+	ctx
+	    .json(Map
+		.of("success", true, "running", runner.isRunning(), "intervalSeconds", runner.getIntervalSeconds()));
+    }
+
+    @Post("/simulation/stop")
+    public void stopSimulation(Context ctx) {
+	runner.stop();
+	ctx.json(Map.of("success", true, "running", runner.isRunning()));
+    }
+
+    @Get("/simulation/status")
+    public void getSimulationStatus(Context ctx) {
+	String time = SimulationTime.now().format(DateTimeFormatter.ofPattern("h:mm a"));
+	String date = SimulationTime.now().format(DateTimeFormatter.ofPattern("EEEE, MMMM d"));
+
+	Map<String, Object> status = new HashMap<>();
+	status.put("running", runner.isRunning());
+	status.put("intervalSeconds", runner.getIntervalSeconds());
+	status.put("tickCount", runner.getTickCount());
+	status.put("lastError", runner.getLastError());
+	status.put("time", time);
+	status.put("date", date);
+	status.put("agentCount", service.getAgents().size());
+
+	ctx.json(status);
     }
 }

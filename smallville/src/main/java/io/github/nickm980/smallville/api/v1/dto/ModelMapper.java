@@ -12,6 +12,7 @@ import io.github.nickm980.smallville.entities.Dialog;
 import io.github.nickm980.smallville.entities.Location;
 import io.github.nickm980.smallville.memory.Characteristic;
 import io.github.nickm980.smallville.memory.Memory;
+import io.github.nickm980.smallville.memory.Observation;
 import io.github.nickm980.smallville.memory.Plan;
 import io.github.nickm980.smallville.memory.Reflection;
 import io.github.nickm980.smallville.memory.TemporalMemory;
@@ -55,6 +56,10 @@ public class ModelMapper {
 	    result.setType("Reflection");
 	}
 
+	if (memory instanceof Observation && ((Observation) memory).isDialog()) {
+	    result.setType("Dialog");
+	}
+
 	if (memory instanceof TemporalMemory) {
 	    result.setTime(((TemporalMemory) memory).getTime().format(DateTimeFormatter.ofPattern("hh:mm a")));
 	}
@@ -71,6 +76,20 @@ public class ModelMapper {
 	    response.setName(dialog.getName());
 	    response.setMessage(dialog.getMessage());
 	    result.add(response);
+	}
+
+	return result;
+    }
+
+    public ConversationGroupResponse fromConversationGroup(Conversation conversation) {
+	ConversationGroupResponse result = new ConversationGroupResponse();
+
+	result.setTalker(conversation.getTalker());
+	result.setTalkee(conversation.getTalkee());
+	result.setDialog(fromConversation(conversation));
+
+	if (conversation.getTime() != null) {
+	    result.setTime(conversation.getTime().format(DateTimeFormatter.ofPattern("h:mm a")));
 	}
 
 	return result;

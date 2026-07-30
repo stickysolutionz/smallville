@@ -10,3 +10,4 @@ glove.840B.300d.txt
 out
 pages
 node_modules
+/backups/

@@ -102,6 +102,8 @@ plans:
     Schedule: {{#agent.shortPlans}}{{description}}; {{/agent.shortPlans}}
 
     * The location should always include a leaf location or object chosen from the available locations
+    * The lines above starting with another person's name state where that person actually is right now - this is ground truth.
+    * If your schedule mentions doing something with another named person, only describe them as present if the ground truth above confirms they are at your same location right now. Otherwise, describe yourself doing the activity alone or improvising, and do not claim they are with you.
 
     What is your activity at {{date.time}}?
 

@@ -1,5 +1,6 @@
 package io.github.nickm980.smallville.entities;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -10,12 +11,22 @@ public class Conversation {
     private List<Dialog> messages;
     private String agent;
     private String other;
+    private LocalDateTime time;
 
     public Conversation(String agent, String other, List<Dialog> messages) {
+	this(agent, other, messages, SimulationTime.now());
+    }
+
+    public Conversation(String agent, String other, List<Dialog> messages, LocalDateTime time) {
 	this.messages = new ArrayList<Dialog>();
 	this.agent = agent;
 	this.other = other;
 	this.messages = messages;
+	this.time = time;
+    }
+
+    public LocalDateTime getTime() {
+	return time;
     }
 
     public List<Dialog> getDialog() {

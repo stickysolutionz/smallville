@@ -65,7 +65,15 @@ public class World {
 	return Optional.ofNullable(agents.getById(name));
     }
 
+    public boolean deleteAgent(String name) {
+	return agents.delete(name);
+    }
+
     public List<Conversation> getConversationsAfter(LocalDateTime time) {
+	return conversations.all();
+    }
+
+    public List<Conversation> getAllConversations() {
 	return conversations.all();
     }
 

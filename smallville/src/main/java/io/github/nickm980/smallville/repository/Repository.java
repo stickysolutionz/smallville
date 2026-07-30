@@ -68,6 +68,16 @@ public class Repository<T> {
     }
 
     /**
+     * Removes the item with the given ID from the repository.
+     *
+     * @param id the ID of the item to remove
+     * @return true if an item was removed, false if no item existed with that ID
+     */
+    public boolean delete(String id) {
+	return data.remove(id) != null;
+    }
+
+    /**
      * Returns the number of items in the repository.
      *
      * @return the number of items in the repository

@@ -1,6 +1,7 @@
 package io.github.nickm980.smallville.llm;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
@@ -43,7 +44,7 @@ public class ChatGPT implements LLM {
 		break;
 	    } catch (IOException | SmallvilleException e) {
 		retryCount++;
-		LOG.error("Request failed. Retrying... (Attempt " + retryCount + ")");
+		LOG.error("Request failed. Retrying... (Attempt " + retryCount + ")", e);
 
 		executor.schedule(() -> semaphore.release(), 2, TimeUnit.SECONDS);
 
@@ -137,7 +138,7 @@ public class ChatGPT implements LLM {
 	LOG.debug("[Chat Request Original]" + json);
 	LOG.debug("[Chat Request]" + prompt.getContent());
 
-	RequestBody body = RequestBody.create(json.getBytes());
+	RequestBody body = RequestBody.create(json.getBytes(StandardCharsets.UTF_8));
 	Request request = new Request.Builder()
 	    .url(SmallvilleConfig.getConfig().getApiPath())
 	    .addHeader("Content-Type", "application/json")
