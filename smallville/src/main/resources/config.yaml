@@ -13,3 +13,17 @@ reflectionCutoff: 50
 simulationFile: false
 # How many times ChatGPT should attempt to send a prompt before aborting
 maxRetries: 2
+
+# Memory retrieval. A memory is scored as the weighted sum of how recent, how
+# important and how relevant it is, each bounded to 0-1 first.
+#
+# How long, in SIMULATED hours, before a memory counts as half as recent.
+recencyHalfLifeHours: 8
+# How many memories to feed into a prompt as "relevant memories".
+retrievalCount: 3
+# Relative pull of each component. Raise relevanceWeight to make agents more
+# single-minded about the topic at hand; raise recencyWeight to make them more
+# reactive to what just happened.
+recencyWeight: 1.0
+importanceWeight: 1.0
+relevanceWeight: 1.0

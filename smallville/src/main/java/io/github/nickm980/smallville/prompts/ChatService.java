@@ -418,14 +418,16 @@ public class ChatService implements Prompts {
 	    .setPrompt(SmallvilleConfig.getPrompts().getAgent().getReflectionQuestion())
 	    .build();
 
-	String query = chat.sendChat(prompt, .1);
-	String[] lines = query.split("\n");
-	query = query.split("\n")[lines.length - 1].substring(2);
+	String query = lastNonBlankLine(chat.sendChat(prompt, .1));
 
 	LOG.debug("[Reflections] Question: " + query);
 
+	// Previously this stripped two leading characters twice - once when
+	// picking the line and again when querying - so the question was cut
+	// four characters in, and any short answer threw
+	// StringIndexOutOfBoundsException out of the middle of a tick.
 	Set<Memory> filter = new HashSet<Memory>();
-	filter.addAll(agent.getMemoryStream().getRelevantMemories(query.substring(2)));
+	filter.addAll(agent.getMemoryStream().getRelevantMemories(query));
 	List<Memory> memories = new ArrayList<>(filter); // Convert the set back to a list
 
 	LOG.debug(String.join(",", memories.stream().map(m -> m.getDescription()).collect(Collectors.toList())));
@@ -465,6 +467,24 @@ public class ChatService implements Prompts {
 
 	LOG.debug("reacting " + result.getAnswer());
 	return result;
+    }
+
+    /**
+     * The last line with content, stripped of any list marker the model put in
+     * front of it ("3. ", "- ", "* ").
+     */
+    private static String lastNonBlankLine(String response) {
+	String[] lines = response.split("\\r?\\n");
+
+	for (int i = lines.length - 1; i >= 0; i--) {
+	    String line = lines[i].trim();
+
+	    if (!line.isBlank()) {
+		return line.replaceFirst("^(?:\\d+[.)]|[-*•])\\s*", "");
+	    }
+	}
+
+	return response.trim();
     }
 
     public String createTraits(Agent agent) {

@@ -37,12 +37,7 @@ public class Plan extends Memory implements TemporalMemory {
 
     @Override
     double getRecency() {
-	var now = SimulationTime.now();
-	var a = ChronoUnit.SECONDS.between(time, SimulationTime.startedAt());
-	var b = ChronoUnit.SECONDS.between(now, time);
-	var timeSinceStart = ChronoUnit.SECONDS.between(now, SimulationTime.startedAt());
-
-	return SmallvilleMath.normalize(SmallvilleMath.decay(a, b), timeSinceStart, 0);
+	return recencyOf(time);
     }
 
     public void convert(PlanType type) {

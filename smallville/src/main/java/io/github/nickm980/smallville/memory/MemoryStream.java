@@ -1,13 +1,13 @@
 package io.github.nickm980.smallville.memory;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
+
+import io.github.nickm980.smallville.config.SmallvilleConfig;
 import java.util.stream.DoubleStream;
 import java.util.stream.Stream;
 
@@ -37,6 +37,10 @@ public class MemoryStream {
 	return getRelevantMemories(query, defaultMinImportance);
     }
 
+    public List<Memory> getRelevantMemories(String query, int minImportance) {
+	return getRelevantMemories(query, minImportance, SmallvilleConfig.getConfig().getRetrievalCount());
+    }
+
     /**
      * Prunes the weaker, less poingnant memories and returns the strongest ones
      * based on observations and updated plans.
@@ -47,37 +51,29 @@ public class MemoryStream {
      * 
      * @return
      */
-    public List<Memory> getRelevantMemories(String query, int minImportance) {
-	// score, memory index
-	Map<Double, Integer> scores = new HashMap<Double, Integer>();
-
-	for (Memory memory : memories) {
-	    if (memory.getImportance() >= minImportance) {
-		double score = memory.getScore(query);
-		scores.put(score, memories.indexOf(memory));
-	    }
-	}
-
-	List<Double> keys = new ArrayList<Double>(scores.keySet());
-	Collections.sort(keys);
-
-	List<Integer> indices = scores.values().stream().collect(Collectors.toList());
-
-	if (scores.size() > 3) {
-	    double first = keys.get(keys.size() - 1);
-	    double second = keys.get(keys.size() - 2);
-	    double third = keys.get(keys.size() - 3);
-
-	    indices = List.of(scores.get(first), scores.get(second), scores.get(third));
-	}
-
-	List<Memory> memCopies = new ArrayList<Memory>();
-
-	for (int index : indices) {
-	    memCopies.add(memories.get(index));
-	}
-
-	return memCopies;
+    /**
+     * The {@code limit} highest scoring memories for a query, strongest first.
+     * <p>
+     * Scores are carried alongside their memory rather than used as map keys.
+     * The previous implementation collected candidates into a
+     * {@code Map<Double, Integer>} keyed by score, so any two memories that
+     * happened to score identically destroyed one another before ranking even
+     * began - and identical scores are common, since unweighted memories with
+     * no relevance to the query all score exactly the same. It also returned
+     * every memory unranked whenever the stream held three or fewer
+     * candidates, and was hardcoded to three otherwise.
+     */
+    public List<Memory> getRelevantMemories(String query, int minImportance, int limit) {
+	return memories
+	    .stream()
+	    .filter(memory -> memory.getImportance() >= minImportance)
+	    // Scored once per memory: getScore runs a BERT embedding comparison,
+	    // so it must not be called again from inside the sort comparator.
+	    .map(memory -> Map.entry(memory, memory.getScore(query)))
+	    .sorted(Map.Entry.<Memory, Double>comparingByValue().reversed())
+	    .limit(Math.max(0, limit))
+	    .map(Map.Entry::getKey)
+	    .collect(Collectors.toList());
     }
 
     public List<Memory> getUnweightedMemories() {

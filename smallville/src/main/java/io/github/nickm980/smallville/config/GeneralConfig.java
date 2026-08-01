@@ -11,6 +11,54 @@ public class GeneralConfig {
     private boolean simulationFile;
     private int maxRetries;
 
+    // Memory retrieval. Defaults are applied here rather than relying on the
+    // yaml so an older config.yaml sitting next to the jar still starts.
+    private double recencyHalfLifeHours = 8;
+    private int retrievalCount = 3;
+    private double recencyWeight = 1;
+    private double importanceWeight = 1;
+    private double relevanceWeight = 1;
+
+    public double getRecencyHalfLifeHours() {
+	return recencyHalfLifeHours;
+    }
+
+    public void setRecencyHalfLifeHours(double recencyHalfLifeHours) {
+	this.recencyHalfLifeHours = recencyHalfLifeHours;
+    }
+
+    public int getRetrievalCount() {
+	return retrievalCount;
+    }
+
+    public void setRetrievalCount(int retrievalCount) {
+	this.retrievalCount = retrievalCount;
+    }
+
+    public double getRecencyWeight() {
+	return recencyWeight;
+    }
+
+    public void setRecencyWeight(double recencyWeight) {
+	this.recencyWeight = recencyWeight;
+    }
+
+    public double getImportanceWeight() {
+	return importanceWeight;
+    }
+
+    public void setImportanceWeight(double importanceWeight) {
+	this.importanceWeight = importanceWeight;
+    }
+
+    public double getRelevanceWeight() {
+	return relevanceWeight;
+    }
+
+    public void setRelevanceWeight(double relevanceWeight) {
+	this.relevanceWeight = relevanceWeight;
+    }
+
     public boolean isSimulationFile() {
 	return simulationFile;
     }

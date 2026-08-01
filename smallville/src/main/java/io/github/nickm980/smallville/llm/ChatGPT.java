@@ -73,35 +73,6 @@ public class ChatGPT implements LLM {
     }
 
     
-    @Override
-    public float[] getTokenEmbeddings(String text) {
-	OkHttpClient client = new OkHttpClient();
-	ObjectMapper mapper = new ObjectMapper();
-	float[] result = new float[0];
-
-	try {
-	    // Create the request body
-	    JsonNode requestBody = mapper.createObjectNode().put("model", "text-embedding-ada-002").put("input", text);
-
-	    Request request = new Request.Builder()
-		.url("https://api.openai.com/v1/embeddings")
-		.post(RequestBody
-		    .create(mapper.writeValueAsString(requestBody), okhttp3.MediaType.parse("application/json")))
-		.addHeader("Authorization", "Bearer " + Settings.getApiKey())
-		.build();
-
-	    Response response = client.newCall(request).execute();
-	    String responseBody = response.body().string();
-	    JsonNode responseJson = mapper.readTree(responseBody);
-
-	    result = mapper.convertValue(responseJson.get("data").get(0).get("embedding"), float[].class);
-	} catch (IOException e) {
-	    e.printStackTrace();
-	}
-
-	return result;
-    }
-
     private String attemptRequest(PromptRequest prompt, double temperature) throws IOException, SmallvilleException {
 	long start = System.currentTimeMillis();
 
