@@ -5,6 +5,7 @@ import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { useEffect, useState } from 'react';
 import { getAllConversations, ConversationGroup } from '../../lib/smallville';
 import CollapsibleSection from '../collapsible-section';
+import { getSpeakerColorClass } from '../map/avatar-preferences';
 
 const PAGE_SIZE = 20;
 
@@ -46,8 +47,9 @@ export default function ConversationsPage() {
     <main className="p-4 md:p-10 mx-auto max-w-3xl">
       <Title>Conversations</Title>
       <Text>
-        When two agents end up in the same place, they get a chance to
-        notice each other and talk. Most recent first.
+        When agents end up in the same place, they get a chance to notice
+        each other and talk - sometimes just two, sometimes the whole room.
+        Most recent first.
       </Text>
 
       <div className="mt-6 space-y-3">
@@ -72,38 +74,49 @@ export default function ConversationsPage() {
           return (
             <CollapsibleSection
               key={currentPage * PAGE_SIZE + i}
-              title={`${conversation.talker} & ${conversation.talkee}`}
+              title={conversation.participants.join(' & ')}
               subtitle={subtitle}
             >
               <div className="space-y-2">
-                {conversation.dialog.map((line, j) => {
-                  const isTalker = line.name === conversation.talker;
-                  return (
-                    <div
-                      key={j}
-                      className={isTalker ? 'text-left' : 'text-right'}
-                    >
+                {conversation.participants.length === 2 ? (
+                  conversation.dialog.map((line, j) => {
+                    const isTalker = line.name === conversation.participants[0];
+                    return (
                       <div
-                        className={
-                          'inline-block max-w-[80%] rounded-lg px-3 py-2 text-sm ' +
-                          (isTalker
-                            ? 'bg-gray-100 text-gray-800'
-                            : 'bg-indigo-500 text-white')
-                        }
+                        key={j}
+                        className={isTalker ? 'text-left' : 'text-right'}
                       >
                         <div
                           className={
-                            'text-xs font-medium mb-0.5 ' +
-                            (isTalker ? 'text-gray-400' : 'text-indigo-100')
+                            'inline-block max-w-[80%] rounded-lg px-3 py-2 text-sm ' +
+                            (isTalker
+                              ? 'bg-gray-100 text-gray-800'
+                              : 'bg-indigo-500 text-white')
                           }
                         >
-                          {line.name}
+                          <div
+                            className={
+                              'text-xs font-medium mb-0.5 ' +
+                              (isTalker ? 'text-gray-400' : 'text-indigo-100')
+                            }
+                          >
+                            {line.name}
+                          </div>
+                          {line.message}
                         </div>
-                        {line.message}
                       </div>
+                    );
+                  })
+                ) : (
+                  conversation.dialog.map((line, j) => (
+                    <div key={j} className="rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-800">
+                      <div className={'text-xs font-medium mb-0.5 ' + getSpeakerColorClass(line.name)}>
+                        {line.name}
+                      </div>
+                      {line.message}
                     </div>
-                  );
-                })}
+                  ))
+                )}
               </div>
             </CollapsibleSection>
           );

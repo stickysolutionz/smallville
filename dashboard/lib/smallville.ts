@@ -101,6 +101,23 @@ export async function deleteAgent(name: string) {
   }
 }
 
+export async function deleteLocation(name: string) {
+  try {
+    const response = await fetch(
+      'http://localhost:8080/locations/' + encodeURIComponent(name),
+      {
+        method: 'DELETE',
+        cache: 'no-store'
+      }
+    );
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error deleting location');
+    return { success: false };
+  }
+}
+
 export interface Characteristic {
   index: number;
   description: string;
@@ -190,8 +207,7 @@ export interface ConversationLine {
 }
 
 export interface ConversationGroup {
-  talker: string;
-  talkee: string;
+  participants: string[];
   time: string | null;
   dialog: ConversationLine[];
 }
@@ -364,6 +380,36 @@ export async function stopSimulation() {
   }
 }
 
+export async function setTimestep(minutes: number) {
+  try {
+    const response = await fetch('http://localhost:8080/timestep', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ numOfMinutes: String(minutes) }),
+      cache: 'no-store'
+    });
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error setting timestep');
+    return { success: false };
+  }
+}
+
+export async function resetSimulation() {
+  try {
+    const response = await fetch('http://localhost:8080/simulation/reset', {
+      method: 'POST',
+      cache: 'no-store'
+    });
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error resetting simulation');
+    return { success: false };
+  }
+}
+
 export async function updateLocation(name: string, state: string) {
   try {
     const response = await fetch('http://localhost:8080/locations/' + name,{
@@ -389,5 +435,81 @@ export async function updateLocation(name: string, state: string) {
   } catch (error) {
     console.error('Error updating location');
     return []
+  }
+}
+
+export interface StoryState {
+  story: string;
+  exists: boolean;
+  updated?: boolean;
+  asOfDate: string | null;
+  asOfTime: string | null;
+  minutesSinceUpdate?: number;
+  message?: string | null;
+}
+
+export async function getStory(): Promise<StoryState> {
+  try {
+    const response = await fetch('http://localhost:8080/story', {
+      cache: 'no-store'
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch story.');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching story');
+    return { story: '', exists: false, asOfDate: null, asOfTime: null };
+  }
+}
+
+export async function generateStory(): Promise<StoryState | null> {
+  try {
+    const response = await fetch('http://localhost:8080/story/generate', {
+      method: 'POST',
+      cache: 'no-store'
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to generate story.');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error generating story');
+    return null;
+  }
+}
+
+export function getLocationImageUrl(name: string): string {
+  return `http://localhost:8080/locations/${encodeURIComponent(name)}/image`;
+}
+
+export async function uploadLocationImage(
+  name: string,
+  file: File
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    const formData = new FormData();
+    formData.append('image', file);
+
+    // No Content-Type header here on purpose - the browser needs to set
+    // its own multipart boundary, unlike every other function in this
+    // file which sends JSON.
+    const response = await fetch(
+      `http://localhost:8080/locations/${encodeURIComponent(name)}/image`,
+      {
+        method: 'POST',
+        body: formData,
+        cache: 'no-store'
+      }
+    );
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error uploading location image');
+    return { success: false, message: 'Upload failed' };
   }
 }

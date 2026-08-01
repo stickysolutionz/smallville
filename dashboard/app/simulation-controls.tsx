@@ -1,11 +1,14 @@
 'use client';
 
 import { Text, Button, Badge, Flex } from '@tremor/react';
-import { PlayIcon, PauseIcon } from '@heroicons/react/24/outline';
+import { PlayIcon, PauseIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
+  getInfo,
   getSimulationStatus,
+  resetSimulation,
+  setTimestep,
   startSimulation,
   stopSimulation,
   SimulationStatus
@@ -87,7 +90,10 @@ export default function SimulationControls() {
   const router = useRouter();
   const [status, setStatus] = useState<SimulationStatus | null>(null);
   const [intervalInput, setIntervalInput] = useState('15');
+  const [timestepInput, setTimestepInput] = useState('15');
   const [isPending, setPending] = useState(false);
+  const [isResetting, setResetting] = useState(false);
+  const [isTimestepPending, setTimestepPending] = useState(false);
   const initialized = useRef(false);
 
   async function refreshStatus() {
@@ -95,6 +101,10 @@ export default function SimulationControls() {
     setStatus(s);
     if (!initialized.current) {
       setIntervalInput(String(s.intervalSeconds));
+      const info = await getInfo();
+      if (!Array.isArray(info)) {
+        setTimestepInput(String(info.step));
+      }
       initialized.current = true;
     }
   }
@@ -134,6 +144,30 @@ export default function SimulationControls() {
     await refreshStatus();
     router.refresh();
     setPending(false);
+  }
+
+  async function handleReset() {
+    if (
+      !confirm(
+        'Reset the simulation? This permanently wipes all conversations, every agent\'s diary, and the generated story. Agents and locations are kept.'
+      )
+    ) {
+      return;
+    }
+
+    setResetting(true);
+    await resetSimulation();
+    await refreshStatus();
+    router.refresh();
+    setResetting(false);
+  }
+
+  async function handleTimestepChange() {
+    const minutes = Math.max(1, Number(timestepInput) || 15);
+    setTimestepInput(String(minutes));
+    setTimestepPending(true);
+    await setTimestep(minutes);
+    setTimestepPending(false);
   }
 
   const seconds = Math.max(2, Number(intervalInput) || 15);
@@ -177,7 +211,27 @@ export default function SimulationControls() {
         </div>
 
         <Text>≈ {ticksPerMinute} ticks/min</Text>
+
+        <div>
+          <Text>Simulated minutes per tick</Text>
+          <input
+            type="number"
+            min={1}
+            value={timestepInput}
+            disabled={isTimestepPending}
+            className="h-10 w-28 rounded-md border border-gray-200 px-3 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500 disabled:opacity-50"
+            onChange={(e) => setTimestepInput(e.target.value)}
+            onBlur={handleTimestepChange}
+          />
+        </div>
       </Flex>
+
+      <Text className="mt-2 text-gray-500">
+        A lower value means more, smaller steps through the day - more LLM
+        calls for the same amount of story. A higher value covers more
+        simulated time per tick, using less compute for the same stretch of
+        story.
+      </Text>
 
       <Text className="mt-4">
         Simulated time: {status?.date ? `${status.date}, ` : ''}
@@ -190,6 +244,19 @@ export default function SimulationControls() {
           Last tick error: {status.lastError}
         </Text>
       )}
+
+      <Flex justifyContent="end" className="mt-6">
+        <Button
+          size="xs"
+          variant="secondary"
+          color="red"
+          icon={ArrowPathIcon}
+          loading={isResetting}
+          onClick={handleReset}
+        >
+          Reset Simulation
+        </Button>
+      </Flex>
     </div>
   );
 }
