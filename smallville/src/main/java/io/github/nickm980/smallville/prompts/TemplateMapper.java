@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 
 import io.github.nickm980.smallville.config.SmallvilleConfig;
 import io.github.nickm980.smallville.entities.Agent;
+import io.github.nickm980.smallville.entities.SimulationTime;
 import io.github.nickm980.smallville.memory.MemoryStream;
 import io.github.nickm980.smallville.memory.Plan;
 import io.github.nickm980.smallville.memory.PlanType;
@@ -66,7 +67,9 @@ public class TemplateMapper {
 
     public String buildPlansBlock(String name, List<Plan> plans) {
 	String result = "";
-	LocalDateTime time = LocalDateTime.now();
+	// Simulated time: this decides which plans count as already past, and
+	// the plans it compares against are stamped in simulated time too.
+	LocalDateTime time = SimulationTime.now();
 
 	boolean includeBlock = false;
 	int index = 0;

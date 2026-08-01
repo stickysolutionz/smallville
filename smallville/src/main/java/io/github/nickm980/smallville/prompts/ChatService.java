@@ -25,6 +25,7 @@ import io.github.nickm980.smallville.config.SmallvilleConfig;
 import io.github.nickm980.smallville.entities.Agent;
 import io.github.nickm980.smallville.entities.Conversation;
 import io.github.nickm980.smallville.entities.Dialog;
+import io.github.nickm980.smallville.entities.SimulationTime;
 import io.github.nickm980.smallville.llm.LLM;
 import io.github.nickm980.smallville.memory.Memory;
 import io.github.nickm980.smallville.memory.Plan;
@@ -350,7 +351,11 @@ public class ChatService implements Prompts {
 	    return null;
 	}
 
-	return LocalDateTime.of(LocalDate.now(), LocalTime.of(hour, minute));
+	// The simulated date, not the wall clock. The simulated clock advances
+	// by a timestep every tick, so it crosses midnight within minutes of
+	// real time - after which wall-clock dating stamped every new plan onto
+	// a day the simulation had already left behind.
+	return LocalDateTime.of(SimulationTime.now().toLocalDate(), LocalTime.of(hour, minute));
     }
 
     @Override

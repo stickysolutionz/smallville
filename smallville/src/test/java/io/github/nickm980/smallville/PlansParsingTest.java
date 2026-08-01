@@ -2,10 +2,12 @@ package io.github.nickm980.smallville;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
+import io.github.nickm980.smallville.entities.SimulationTime;
 import io.github.nickm980.smallville.llm.ChatGPT;
 import io.github.nickm980.smallville.memory.Plan;
 import io.github.nickm980.smallville.prompts.ChatService;
@@ -93,6 +95,27 @@ public class PlansParsingTest {
 	assertEquals(12, plans.get(1).getTime().getHour());
 	assertEquals(21, plans.get(2).getTime().getHour());
 	assertEquals(5, plans.get(2).getTime().getMinute());
+    }
+
+    @Test
+    public void plans_are_dated_on_the_simulated_day_not_the_wall_clock() {
+	// The simulated clock advances a timestep every tick and crosses
+	// midnight within minutes of real time. Dating plans with LocalDate.now()
+	// stamped them onto a day the simulation had already left.
+	LocalDateTime simulatedDay = LocalDateTime.now().plusDays(3).withHour(6).withMinute(0);
+	LocalDateTime restore = SimulationTime.now();
+
+	try {
+	    SimulationTime.setSimulationTime(simulatedDay);
+
+	    ChatService service = new ChatService(new World(), new ChatGPT());
+	    List<Plan> plans = service.parsePlans("9:00 am at Red House: Kitchen, make breakfast");
+
+	    assertEquals(1, plans.size());
+	    assertEquals(simulatedDay.toLocalDate(), plans.get(0).getTime().toLocalDate());
+	} finally {
+	    SimulationTime.setSimulationTime(restore);
+	}
     }
 
     @Test

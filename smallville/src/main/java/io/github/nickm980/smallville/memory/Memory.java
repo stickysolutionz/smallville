@@ -14,11 +14,25 @@ public abstract class Memory implements Comparable<Memory> {
     private int weight;
 
     public Memory(String description) {
-	if (description == null) {
-	    description = "";
-	}
-	this.description = description.replace("-", "").trim();
+	this.description = withoutListMarker(description);
 	this.weight = 0;
+    }
+
+    /**
+     * Drops a list marker the model put in front of the text.
+     * <p>
+     * This previously deleted every hyphen anywhere in the description, which
+     * quietly rewrote "well-known" as "wellknown", "half-finished" as
+     * "halffinished" and "3:00-4:00" as "3:004:00" in every memory the agent
+     * ever formed. The intent was only ever to strip the leading "- " that
+     * models put in front of list items.
+     */
+    private static String withoutListMarker(String description) {
+	if (description == null) {
+	    return "";
+	}
+
+	return description.trim().replaceFirst("^(?:[-*•]|\\d+[.)])\\s+", "").trim();
     }
 
     /**

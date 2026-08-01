@@ -87,6 +87,22 @@ public class MemoryStreamTest {
     }
 
     @Test
+    public void hyphens_inside_a_memory_are_preserved() {
+	// The constructor used to delete every hyphen anywhere in the text, so
+	// every memory an agent formed was silently rewritten.
+	assertEquals("Maria is well-known for her half-finished projects",
+		new Observation("Maria is well-known for her half-finished projects").getDescription());
+	assertEquals("worked the 3:00-4:00 shift", new Observation("worked the 3:00-4:00 shift").getDescription());
+    }
+
+    @Test
+    public void a_leading_list_marker_is_still_stripped() {
+	assertEquals("wake up and get dressed", new Observation("- wake up and get dressed").getDescription());
+	assertEquals("wake up and get dressed", new Observation("* wake up and get dressed").getDescription());
+	assertEquals("wake up and get dressed", new Observation("2. wake up and get dressed").getDescription());
+    }
+
+    @Test
     public void identically_scoring_memories_do_not_destroy_each_other() {
 	// The old implementation collected candidates into a
 	// Map<Double, Integer> keyed by score. Unweighted memories with no
