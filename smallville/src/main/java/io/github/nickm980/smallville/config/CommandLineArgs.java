@@ -13,6 +13,13 @@ public class CommandLineArgs {
     @Parameter(names = "--python-server-port", description = "Python server port", required = false)
     private String pythonServerPort;
 
+    @Parameter(names = "--seed", description = "Seed for the simulation's random decisions, to replay a run", required = false)
+    private Long seed;
+
+    public Long getSeed() {
+	return seed;
+    }
+
     public String getPythonServerPort() {
 	return pythonServerPort;
     }

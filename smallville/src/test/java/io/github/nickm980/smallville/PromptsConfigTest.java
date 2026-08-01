@@ -33,6 +33,7 @@ public class PromptsConfigTest {
 
 	assertFilled(prompts.getReactions().getConversation(), "reactions.conversation");
 	assertFilled(prompts.getReactions().getGroupConversation(), "reactions.groupConversation");
+	assertFilled(prompts.getReactions().getConversationTone(), "reactions.conversationTone");
 	assertFilled(prompts.getPlans().getShortTerm(), "plans.shortTerm");
 	assertFilled(prompts.getPlans().getLongTerm(), "plans.longTerm");
 	assertFilled(prompts.getPlans().getCurrent(), "plans.current");
@@ -65,6 +66,17 @@ public class PromptsConfigTest {
 
 	assertTrue(compact.contains("{{summary}}"), "story.compact is missing {{summary}}");
 	assertTrue(compact.contains("{{passages}}"), "story.compact is missing {{passages}}");
+    }
+
+    @Test
+    public void conversation_prompts_declare_the_values_they_are_given() {
+	String group = SmallvilleConfig.getPrompts().getReactions().getGroupConversation();
+
+	assertTrue(group.contains("{{history}}"), "reactions.groupConversation is missing {{history}}");
+	assertTrue(group.contains("{{observation}}"), "reactions.groupConversation is missing {{observation}}");
+
+	assertTrue(SmallvilleConfig.getPrompts().getReactions().getConversationTone().contains("{{transcript}}"),
+		"reactions.conversationTone is missing {{transcript}}");
     }
 
     private static void assertFilled(String prompt, String name) {

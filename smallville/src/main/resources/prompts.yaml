@@ -18,8 +18,12 @@ reactions:
     {{name}}: {{description}}
     {{/others}}
 
+    How these people know each other:
+    {{history}}
+
     Create a natural, believable conversation among everyone listed above, all of whom are together right now.
     Topic: {{observation}}
+    Let the history above shape the tone. People meeting for the first time are more tentative and introduce themselves; people who know each other well skip the pleasantries; people with friction between them are shorter with each other.
     Not everyone has to speak in every line, but everyone present should get at least one line if it feels natural for a real group conversation. People can react to what was just said, talk over each other's points, or bring up something new.
 
     For example, a conversation between people named A, B, and C would look like this
@@ -28,6 +32,15 @@ reactions:
     B: No, what happened?
     C: I heard about it too, from Dana.
     A: Right, that's the one.
+
+  conversationTone: |
+    Here is a conversation that just took place:
+
+    {{transcript}}
+
+    How did it leave the people in it feeling about each other?
+
+    Answer with exactly one word and nothing else: warm, neutral, or tense.
 
   say: |
     {{agent.summary}}

@@ -11,12 +11,14 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,6 +26,7 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.github.nickm980.smallville.Settings;
 import io.github.nickm980.smallville.Util;
 import io.github.nickm980.smallville.World;
 import io.github.nickm980.smallville.api.v1.dto.*;
@@ -43,6 +46,7 @@ import io.github.nickm980.smallville.memory.TemporalMemory;
 import io.github.nickm980.smallville.config.SmallvilleConfig;
 import io.github.nickm980.smallville.prompts.PromptBuilder;
 import io.github.nickm980.smallville.prompts.PromptRequest;
+import io.github.nickm980.smallville.relationships.Relationship;
 import io.github.nickm980.smallville.story.StorySnapshot;
 import io.github.nickm980.smallville.story.StoryStore;
 import io.github.nickm980.smallville.update.UpdateService;
@@ -63,7 +67,20 @@ public class SimulationService {
     // per-participant-pair since who actually joins a group conversation is
     // probabilistic and changes tick to tick.
     private final Map<String, LocalDateTime> lastConversationAt = new HashMap<>();
-    private static final Duration CONVERSATION_COOLDOWN = Duration.ofMinutes(60);
+    /**
+     * The shortest gap between two conversations in the same place. Only a
+     * floor to stop one room producing a conversation on every consecutive
+     * tick - whether a conversation happens at all is decided by
+     * {@link #conversationUrge}, not by this.
+     */
+    private static final Duration CONVERSATION_FLOOR = Duration.ofMinutes(20);
+
+    /**
+     * Seeded from {@link Settings#getSeed()} so a run can be replayed when
+     * working out why a particular conversation happened. Bare Math.random()
+     * and an unseeded shuffle made that impossible.
+     */
+    private final Random random = new Random(Settings.getSeed());
     private final StoryStore storyStore = new StoryStore();
     private final LocationImageStore imageStore = new LocationImageStore();
 
@@ -633,45 +650,55 @@ public class SimulationService {
     }
 
     private static final int MAX_GROUP_PARTICIPANTS = 5;
-    private static final double EXTRA_PARTICIPANT_JOIN_CHANCE = 0.5;
 
     /**
-     * Nothing else in the update pipeline notices when several agents end up
-     * in the same location - conversations only ever happen if something
+     * Nothing else in the update pipeline notices when several agents end up in
+     * the same location - conversations only ever happen if something
      * explicitly feeds an agent a reactable observation. This is that missing
-     * nudge: after every tick, group agents by location and give each
-     * multi-person location a chance to strike up a conversation. Two
-     * co-located agents always talk (matches the old pairwise behavior
-     * exactly); anyone beyond that has a per-person chance of joining in,
-     * capped at MAX_GROUP_PARTICIPANTS so a very crowded location doesn't
-     * produce an unwieldy prompt.
+     * nudge.
+     * <p>
+     * Whether a conversation actually happens is decided by the agents rather
+     * than by the clock. Previously any two co-located agents talked on a fixed
+     * hourly cooldown, forever, whatever else was true - which in a town where
+     * people spend all day in the same place is a metronome, not a social
+     * model. Now a pair is more likely to talk if they have never met, if
+     * something has happened to either of them since they last spoke, and if
+     * they get on; and agents who are asleep do not talk at all.
      */
     private void triggerGroupConversations() {
 	Map<String, List<Agent>> byLocation = new HashMap<>();
 
 	for (Agent agent : world.getAgents()) {
-	    if (agent.getLocation() == null) {
+	    if (agent.getLocation() == null || isAsleep(agent)) {
 		continue;
 	    }
+
 	    byLocation.computeIfAbsent(agent.getLocation().getFullPath(), k -> new ArrayList<>()).add(agent);
 	}
 
 	for (Map.Entry<String, List<Agent>> entry : byLocation.entrySet()) {
 	    String location = entry.getKey();
 	    List<Agent> here = entry.getValue();
+	    LocalDateTime now = SimulationTime.now();
 
 	    if (here.size() < 2) {
 		continue;
 	    }
 
+	    // A floor, not the mechanism: it only stops the same room producing
+	    // a fresh conversation on consecutive ticks.
 	    LocalDateTime lastTime = lastConversationAt.get(location);
-	    LocalDateTime now = SimulationTime.now();
 
-	    if (lastTime != null && Duration.between(lastTime, now).compareTo(CONVERSATION_COOLDOWN) < 0) {
+	    if (lastTime != null && Duration.between(lastTime, now).compareTo(CONVERSATION_FLOOR) < 0) {
 		continue;
 	    }
 
-	    List<Agent> participants = selectParticipants(here);
+	    List<Agent> participants = chooseParticipants(here);
+
+	    if (participants.isEmpty()) {
+		continue;
+	    }
+
 	    lastConversationAt.put(location, now);
 
 	    try {
@@ -682,19 +709,114 @@ public class SimulationService {
 	}
     }
 
-    private List<Agent> selectParticipants(List<Agent> here) {
+    /**
+     * Picks who talks, or returns empty if nobody feels like it this tick.
+     */
+    private List<Agent> chooseParticipants(List<Agent> here) {
 	List<Agent> shuffled = new ArrayList<>(here);
-	Collections.shuffle(shuffled);
+	Collections.shuffle(shuffled, random);
 
-	List<Agent> selected = new ArrayList<>(shuffled.subList(0, 2));
+	Agent initiator = shuffled.get(0);
+	Agent partner = null;
+	double bestUrge = -1;
 
-	for (int i = 2; i < shuffled.size() && selected.size() < MAX_GROUP_PARTICIPANTS; i++) {
-	    if (Math.random() < EXTRA_PARTICIPANT_JOIN_CHANCE) {
-		selected.add(shuffled.get(i));
+	// The initiator talks to whoever they most have reason to talk to,
+	// rather than to whoever the iteration order happened to reach first.
+	for (int i = 1; i < shuffled.size(); i++) {
+	    double urge = conversationUrge(initiator, shuffled.get(i));
+
+	    if (urge > bestUrge) {
+		bestUrge = urge;
+		partner = shuffled.get(i);
+	    }
+	}
+
+	if (partner == null || random.nextDouble() >= bestUrge) {
+	    return List.of();
+	}
+
+	List<Agent> selected = new ArrayList<>(List.of(initiator, partner));
+
+	for (Agent other : shuffled) {
+	    if (selected.size() >= MAX_GROUP_PARTICIPANTS) {
+		break;
+	    }
+
+	    if (selected.contains(other)) {
+		continue;
+	    }
+
+	    // Someone joins a conversation in progress based on how they feel
+	    // about the people already in it.
+	    double urge = selected
+		.stream()
+		.mapToDouble(member -> conversationUrge(member, other))
+		.average()
+		.orElse(0);
+
+	    if (random.nextDouble() < urge) {
+		selected.add(other);
 	    }
 	}
 
 	return selected;
+    }
+
+    /**
+     * How strongly these two would start talking right now, as a probability.
+     */
+    private double conversationUrge(Agent a, Agent b) {
+	Relationship relationship = world.getRelationships().get(a.getFullName(), b.getFullName());
+
+	if (!relationship.haveMet()) {
+	    // Strangers in the same room almost always introduce themselves.
+	    return 0.9;
+	}
+
+	// Warmth pulls both ways: people who get on talk more, people who don't
+	// avoid each other.
+	double warmth = (relationship.affinity() + 1) / 2;
+	double novelty = noveltySince(relationship.lastSpokeAt(), a, b);
+	double urge = 0.1 + (0.45 * novelty) + (0.35 * warmth);
+
+	return Math.max(0.02, Math.min(0.95, urge));
+    }
+
+    /**
+     * How much has happened to either agent since they last spoke, saturating
+     * at a handful of new memories. Two people who have just talked and done
+     * nothing since have little reason to start again.
+     */
+    private double noveltySince(LocalDateTime lastSpokeAt, Agent a, Agent b) {
+	if (lastSpokeAt == null) {
+	    return 1;
+	}
+
+	long fresh = Stream
+	    .concat(a.getMemoryStream().getMemories().stream(), b.getMemoryStream().getMemories().stream())
+	    .filter(memory -> memory instanceof TemporalMemory)
+	    .filter(memory -> ((TemporalMemory) memory).getTime().isAfter(lastSpokeAt))
+	    .count();
+
+	return Math.min(1, fresh / 6.0);
+    }
+
+    /**
+     * Whether the agent is asleep, judged from the activity text the model
+     * wrote. Nothing in the model marks sleep explicitly, and without this
+     * check agents hold conversations in the middle of the night.
+     */
+    private static boolean isAsleep(Agent agent) {
+	String activity = agent.getCurrentActivity();
+
+	if (activity == null) {
+	    return false;
+	}
+
+	String lower = activity.toLowerCase();
+
+	return lower.contains("sleep") || lower.contains("asleep") || lower.contains("dozing")
+		|| lower.contains("napping") || lower.contains("in bed");
     }
 
     public List<ConversationGroupResponse> getAllConversations() {

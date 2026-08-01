@@ -231,6 +231,7 @@ public class ChatService implements Prompts {
 	    .withAgent(initiator)
 	    .withOthers(others)
 	    .withObservation(topic)
+	    .with("history", describeHistory(initiator, others))
 	    .setPrompt(SmallvilleConfig.getPrompts().getReactions().getGroupConversation())
 	    .build();
 
@@ -268,6 +269,63 @@ public class ChatService implements Prompts {
      */
     private static final Pattern ANCHORED_TIME = Pattern
 	.compile("^[\\s\\-*•>]*(?:\\d+[.)]\\s+)?\\d{1,2}:\\d{2}");
+
+    /**
+     * One line per pair describing how well they know each other, so tone
+     * reflects their history instead of every exchange reading like a first
+     * meeting.
+     */
+    private String describeHistory(Agent initiator, List<Agent> others) {
+	List<Agent> everyone = new ArrayList<>();
+	everyone.add(initiator);
+	everyone.addAll(others);
+
+	StringBuilder sb = new StringBuilder();
+
+	for (int i = 0; i < everyone.size(); i++) {
+	    for (int j = i + 1; j < everyone.size(); j++) {
+		String a = everyone.get(i).getFullName();
+		String b = everyone.get(j).getFullName();
+
+		sb.append(world.getRelationships().get(a, b).describe(a, b)).append("\n");
+	    }
+	}
+
+	return sb.toString().trim();
+    }
+
+    /**
+     * Judges how an exchange left its participants, as an affinity shift
+     * between -1 and 1.
+     * <p>
+     * Kept to a single word of output on purpose: this runs once per
+     * conversation on top of everything else, so it should be the cheapest
+     * call in the system.
+     */
+    public double classifyConversationTone(Conversation conversation) {
+	StringBuilder transcript = new StringBuilder();
+
+	for (Dialog line : conversation.getDialog()) {
+	    transcript.append(line.getName()).append(": ").append(line.getMessage()).append("\n");
+	}
+
+	PromptRequest prompt = new PromptBuilder()
+	    .with("transcript", transcript.toString().trim())
+	    .setPrompt(SmallvilleConfig.getPrompts().getReactions().getConversationTone())
+	    .build();
+
+	String answer = chat.sendChat(prompt, .1).trim().toLowerCase();
+
+	if (answer.contains("warm")) {
+	    return 0.15;
+	}
+
+	if (answer.contains("tense")) {
+	    return -0.15;
+	}
+
+	return 0;
+    }
 
     @Override
     public List<Plan> parsePlans(String input) {

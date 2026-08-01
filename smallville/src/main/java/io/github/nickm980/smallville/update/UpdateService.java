@@ -122,6 +122,27 @@ public class UpdateService {
 	}
 
 	world.create(conversation);
+	recordRelationships(conversation);
+    }
+
+    /**
+     * Updates how everyone who just talked feels about each other.
+     * <p>
+     * Costs one extra, deliberately small model call per conversation. Failure
+     * is not fatal - familiarity still increases, the pair is simply recorded
+     * as having had a neutral exchange, because knowing that they spoke at all
+     * is most of the value.
+     */
+    private void recordRelationships(Conversation conversation) {
+	double shift = 0;
+
+	try {
+	    shift = chatService.classifyConversationTone(conversation);
+	} catch (Exception e) {
+	    LOG.warn("Could not judge the tone of a conversation, recording it as neutral: " + e.getMessage());
+	}
+
+	world.getRelationships().recordConversation(conversation.getParticipants(), shift, conversation.getTime());
     }
 
     /**

@@ -13,6 +13,7 @@ import io.github.nickm980.smallville.entities.Agent;
 import io.github.nickm980.smallville.entities.Conversation;
 import io.github.nickm980.smallville.entities.Location;
 import io.github.nickm980.smallville.exceptions.SmallvilleException;
+import io.github.nickm980.smallville.relationships.RelationshipGraph;
 import io.github.nickm980.smallville.repository.Repository;
 
 /**
@@ -22,12 +23,17 @@ public class World {
     private Repository<Location> locations;
     private Repository<Conversation> conversations;
     private Repository<Agent> agents;
+    private final RelationshipGraph relationships = new RelationshipGraph();
     private final Logger LOG = LoggerFactory.getLogger(World.class);
 
     public World() {
 	this.locations = new Repository<>();
 	this.agents = new Repository<>();
 	this.conversations = new Repository<>();
+    }
+
+    public RelationshipGraph getRelationships() {
+	return relationships;
     }
 
     public void create(Conversation conversation) {
@@ -73,6 +79,8 @@ public class World {
     }
 
     public boolean deleteAgent(String name) {
+	relationships.removeAgent(name);
+
 	return agents.delete(name);
     }
 
@@ -86,6 +94,8 @@ public class World {
      */
     public void resetSimulationData() {
 	conversations.clear();
+	relationships.clear();
+
 	for (Agent agent : agents.all()) {
 	    agent.getMemoryStream().clearDiary();
 	    agent.setCurrentActivity("idle");

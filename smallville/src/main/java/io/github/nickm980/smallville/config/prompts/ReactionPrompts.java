@@ -5,7 +5,16 @@ public class ReactionPrompts {
     private String reaction;
     private String conversation;
     private String groupConversation;
+    private String conversationTone;
     private String say;
+
+    public String getConversationTone() {
+	return conversationTone;
+    }
+
+    public void setConversationTone(String conversationTone) {
+	this.conversationTone = conversationTone;
+    }
 
     public String getSay() {
 	return say;
