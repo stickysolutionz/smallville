@@ -40,6 +40,8 @@ import io.github.nickm980.smallville.memory.MemoryStream;
 import io.github.nickm980.smallville.memory.Observation;
 import io.github.nickm980.smallville.memory.Plan;
 import io.github.nickm980.smallville.memory.TemporalMemory;
+import io.github.nickm980.smallville.config.SmallvilleConfig;
+import io.github.nickm980.smallville.prompts.PromptBuilder;
 import io.github.nickm980.smallville.prompts.PromptRequest;
 import io.github.nickm980.smallville.story.StorySnapshot;
 import io.github.nickm980.smallville.story.StoryStore;
@@ -216,8 +218,12 @@ public class SimulationService {
 	    attempts++;
 
 	    try {
-		String raw = chat.sendChat(new PromptRequest.User(buildGenerateCharacterPrompt(existingNames)), 1.0);
-		GeneratedCharacterResponse candidate = parseGeneratedCharacter(raw);
+		PromptRequest request = new PromptBuilder()
+		    .with("existingNames", existingNames.isEmpty() ? "none yet" : String.join(", ", existingNames))
+		    .setPrompt(SmallvilleConfig.getPrompts().getStory().getGenerateCharacter())
+		    .build();
+
+		GeneratedCharacterResponse candidate = parseGeneratedCharacter(chat.sendChat(request.asJsonResponse(), 1.0));
 
 		boolean collides = existingNames
 		    .stream()
@@ -238,27 +244,6 @@ public class SimulationService {
 	}
 
 	return result;
-    }
-
-    private String buildGenerateCharacterPrompt(List<String> existingNames) {
-	String avoidNames = existingNames.isEmpty() ? "none yet"
-		: String.join(", ", existingNames);
-
-	return """
-		Invent an original resident of a small town for a life simulation game.
-
-		Names already in use, your character's name (first and last) must NOT match or closely resemble any of these: %s
-
-		Respond with ONLY raw JSON, no markdown code fences, no commentary, in exactly this shape:
-		{"name": "First Last", "memories": ["...", "...", "...", "...", "...", "..."]}
-
-		Rules for "memories":
-		- Provide 5 to 7 entries.
-		- Each entry is a separate, specific sentence written in third person, starting with the character's first name.
-		- Together they must cover: their job or daily role, at least two distinct personality traits (not just "friendly" or "kind" alone - be specific and a little unusual), one meaningful relationship or social dynamic (family, friend, rival, unrequited crush, etc.), one personal goal or desire, and one flaw, fear, secret, or contradiction that makes them feel like a real person rather than a stock character.
-		- Avoid generic filler like "X likes reading" as the only trait - go deeper into why, or pair it with something more surprising.
-		- Do not repeat the same idea across multiple entries.
-		""".formatted(avoidNames);
     }
 
     private GeneratedCharacterResponse parseGeneratedCharacter(String raw) {
@@ -295,11 +280,17 @@ public class SimulationService {
     private static final DateTimeFormatter STORY_TIME_FORMAT = DateTimeFormatter.ofPattern("h:mm a");
     private static final DateTimeFormatter STORY_FULL_FORMAT = DateTimeFormatter.ofPattern("EEEE, MMMM d, h:mm a");
 
+    /**
+     * How many recent passages are sent to the model word for word. Everything
+     * older is represented by the rolling summary instead.
+     */
+    private static final int PASSAGES_KEPT_VERBATIM = 6;
+
     public StoryResponse getStory() {
 	Optional<StorySnapshot> snapshot = storyStore.load();
 	StoryResponse result = new StoryResponse();
 
-	if (snapshot.isEmpty()) {
+	if (snapshot.isEmpty() || snapshot.get().isEmpty()) {
 	    result.setExists(false);
 	    result.setStory("");
 	    return result;
@@ -319,8 +310,9 @@ public class SimulationService {
     // before either has saved, which would let them independently "discover"
     // the same new material and race to overwrite each other's save.
     public synchronized StoryResponse generateStory() {
-	Optional<StorySnapshot> previous = storyStore.load();
-	LocalDateTime since = previous.map(StorySnapshot::getAsOf).orElse(LocalDateTime.MIN);
+	StorySnapshot previous = storyStore.load().orElseGet(StorySnapshot::new);
+	boolean hasPrevious = !previous.isEmpty();
+	LocalDateTime since = storyCursor(previous, hasPrevious);
 
 	// Gathered under the lock so the material can't be a half-updated view
 	// of a tick in progress. The LLM call below deliberately runs outside
@@ -336,37 +328,101 @@ public class SimulationService {
 	if (newDiaryText.isBlank() && newConversationText.isBlank()) {
 	    StoryResponse result = getStory();
 	    result.setUpdated(false);
-	    result.setMessage(previous.isPresent() ? "No new developments since the last recap."
+	    result.setMessage(hasPrevious ? "No new developments since the last recap."
 		    : "Nothing has happened in the town yet.");
 	    return result;
 	}
 
-	String roster = material.roster();
+	PromptBuilder builder = new PromptBuilder()
+	    .with("roster", material.roster())
+	    .with("now", SimulationTime.now().format(STORY_FULL_FORMAT))
+	    .with("diary", newDiaryText)
+	    .with("conversations", newConversationText);
 
-	String prompt = previous.isPresent()
-		? buildContinuationPrompt(previous.get().getStory(), newDiaryText, newConversationText, roster)
-		: buildFirstStoryPrompt(newDiaryText, newConversationText, roster);
+	if (hasPrevious) {
+	    // Only the recent passages plus a summary of the rest, never the
+	    // whole accumulated story - see PASSAGES_KEPT_VERBATIM.
+	    builder
+		.with("storySoFar", previous.getPromptContext())
+		.setPrompt(SmallvilleConfig.getPrompts().getStory().getContinuation());
+	} else {
+	    builder.setPrompt(SmallvilleConfig.getPrompts().getStory().getFirst());
+	}
 
 	String passage;
 	try {
-	    passage = chat.sendChat(new PromptRequest.User(prompt), 0.7).trim();
+	    passage = chat.sendChat(builder.build(), 0.7).trim();
 	} catch (Exception e) {
 	    LOG.error("Failed to generate story", e);
 	    throw new SmallvilleException("Could not generate the story right now");
 	}
 
-	String fullStory = previous.isPresent() ? previous.get().getStory() + "\n\n" + passage : passage;
-	StorySnapshot snapshot = new StorySnapshot(fullStory, SimulationTime.now());
-	storyStore.save(snapshot);
+	previous.getPassages().add(passage);
+	previous.setAsOf(SimulationTime.now());
+	compactIfNeeded(previous);
+	storyStore.save(previous);
 
 	StoryResponse result = new StoryResponse();
 	result.setExists(true);
 	result.setUpdated(true);
-	result.setStory(fullStory);
-	result.setAsOfDate(snapshot.getAsOf().format(STORY_DATE_FORMAT));
-	result.setAsOfTime(snapshot.getAsOf().format(STORY_TIME_FORMAT));
+	result.setStory(previous.getStory());
+	result.setAsOfDate(previous.getAsOf().format(STORY_DATE_FORMAT));
+	result.setAsOfTime(previous.getAsOf().format(STORY_TIME_FORMAT));
 	result.setMinutesSinceUpdate(0);
 	return result;
+    }
+
+    /**
+     * How far the story is already caught up.
+     */
+    private LocalDateTime storyCursor(StorySnapshot previous, boolean hasPrevious) {
+	if (!hasPrevious || previous.getAsOf() == null) {
+	    return LocalDateTime.MIN;
+	}
+
+	// The cursor is simulated time, and the simulated clock restarts at the
+	// wall clock on every boot. If it now sits behind the last recap, a
+	// cursor in the future would make every future regeneration report "no
+	// new developments" forever.
+	if (SimulationTime.now().isBefore(previous.getAsOf())) {
+	    LOG.warn("Simulation clock is behind the last story update, recapping everything still on record");
+	    return LocalDateTime.MIN;
+	}
+
+	return previous.getAsOf();
+    }
+
+    /**
+     * Folds older passages into the rolling summary once too many have built
+     * up, so the continuation prompt stays a bounded size no matter how long
+     * the town runs. The passages themselves are kept - only the prompt is
+     * shortened, not the story the dashboard displays.
+     */
+    private void compactIfNeeded(StorySnapshot snapshot) {
+	int foldThrough = snapshot.getPassages().size() - PASSAGES_KEPT_VERBATIM;
+
+	if (foldThrough <= snapshot.getSummarisedThrough()) {
+	    return;
+	}
+
+	List<String> toFold = new ArrayList<>(
+		snapshot.getPassages().subList(snapshot.getSummarisedThrough(), foldThrough));
+
+	PromptRequest request = new PromptBuilder()
+	    .with("summary", snapshot.getSummary())
+	    .with("passages", String.join("\n\n", toFold))
+	    .setPrompt(SmallvilleConfig.getPrompts().getStory().getCompact())
+	    .build();
+
+	try {
+	    snapshot.setSummary(chat.sendChat(request, 0.3).trim());
+	    snapshot.setSummarisedThrough(foldThrough);
+	    LOG.info("Compacted " + toFold.size() + " story passages into the running summary");
+	} catch (Exception e) {
+	    // Not fatal. The story is complete on disk either way; the next
+	    // regeneration just carries a slightly longer prompt and retries.
+	    LOG.error("Failed to compact the story summary, leaving it for next time", e);
+	}
     }
 
     // Same diary definition getDiary() uses (excludes Characteristic memories
@@ -425,57 +481,6 @@ public class SimulationService {
 	    });
 
 	return sb.toString();
-    }
-
-    private String buildFirstStoryPrompt(String diaryText, String conversationText, String roster) {
-	String now = SimulationTime.now().format(STORY_FULL_FORMAT);
-
-	return """
-		You are narrating the story of a small town for a life simulation game, based on real events from a simulation, not fiction you invent.
-
-		The only real residents of this town are: %s
-		Do not introduce, name, or refer to any person who is not on this list. Every character in the recap must be one of these people.
-
-		The current in-world date and time is: %s
-		Everything below happened on or before this date and time. Do not invent an earlier scene, a different day, or a "meanwhile, earlier that week" flashback that isn't directly supported by the material below - if something isn't given below, it did not happen and must not appear.
-
-		Here is what has happened so far, drawn from each resident's diary:
-
-		%s
-
-		Here are the conversations that took place:
-
-		%s
-
-		Write a clear, engaging prose recap of what has happened, in past tense, third person, like a narrator catching a reader up on a story. Prioritize what actually happened and what people said over describing scenery, weather, or mood - a touch of atmosphere is fine, but don't let it crowd out the events. If a stretch had little or nothing happen, say so briefly rather than inventing scene-setting to fill the space. Keep it only as long as the material actually warrants - do not pad it out. Only use what is given above - do not invent characters, events, locations, or details that are not directly supported by this material, and do not repurpose a real conversation into a different day or a different set of participants than it actually happened with. You can mention the current in-world time naturally if it's useful, but do not end with a formal paragraph summarizing where everyone stands.
-		""".formatted(roster, now, diaryText, conversationText);
-    }
-
-    private String buildContinuationPrompt(String existingStory, String diaryText, String conversationText, String roster) {
-	String now = SimulationTime.now().format(STORY_FULL_FORMAT);
-
-	return """
-		You are continuing the story of a small town for a life simulation game, based on real new events from a simulation, not fiction you invent.
-
-		The only real residents of this town are: %s
-		Do not introduce, name, or refer to any person who is not on this list. Every character in this passage must be one of these people.
-
-		STORY SO FAR (already written and established - do not restate, summarize, or rewrite any of this, it is here only so you understand the tone and continuity):
-		%s
-
-		The current in-world date and time is: %s
-		The new material below happened on or before this date and time. Do not invent an earlier scene, a different day, or a "meanwhile, earlier" flashback that isn't directly supported by the material below - if something isn't given below or in the story so far, it did not happen and must not appear.
-
-		Here is what is NEW since the story above was last updated, drawn from each resident's diary:
-
-		%s
-
-		Here are the new conversations that took place:
-
-		%s
-
-		Write ONLY the next passage of the story, continuing directly from where it left off, in the same voice and tense. Prioritize what actually happened and what people said over describing scenery, weather, or mood - a touch of atmosphere is fine, but don't let it crowd out the events, and don't re-describe light, weather, or setting you've already established recently. If this stretch had little or nothing happen, say so briefly in a sentence or two rather than inventing a full scene to fill the space. Keep the length proportional to how much actually happened - do not pad it out. Do not include a heading or any re-summary of what came before. Only use what is given above as new material - do not invent events, locations, or details that are not directly supported by this material, do not repurpose a real conversation into a different day or a different set of participants than it actually happened with, and do not contradict anything already established. You can mention the current in-world time naturally if it's useful, but do not end with a formal paragraph summarizing where everyone stands.
-		""".formatted(roster, existingStory, now, diaryText, conversationText);
     }
 
     public void createLocation(CreateLocationRequest request) {

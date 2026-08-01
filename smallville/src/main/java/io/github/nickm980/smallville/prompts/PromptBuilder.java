@@ -97,6 +97,15 @@ public class PromptBuilder {
 	return this;
     }
 
+    /**
+     * Sets an arbitrary template value, for prompts that aren't about one
+     * agent - the story recap and character generation.
+     */
+    public PromptBuilder with(String key, Object value) {
+	data.put(key, value);
+	return this;
+    }
+
     public PromptBuilder setPrompt(String prompt) {
 	this.prompt = prompt;
 	return this;

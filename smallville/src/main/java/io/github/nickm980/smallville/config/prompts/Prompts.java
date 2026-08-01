@@ -7,6 +7,15 @@ public class Prompts {
     private PlanPrompts plans;
     private AgentPrompts agent;
     private MiscPrompts misc;
+    private StoryPrompts story;
+
+    public StoryPrompts getStory() {
+	return story;
+    }
+
+    public void setStory(StoryPrompts story) {
+	this.story = story;
+    }
 
     public ReactionPrompts getReactions() {
 	return reactions;

@@ -243,3 +243,74 @@ misc:
     agent.memories: {{#agent.memories}}{{description}}; {{/agent.memories}}
     agent.name: {{agent.name}}
     agent.plansBlock: {{agent.plansBlock}}
+story:
+  first: |
+    You are narrating the story of a small town for a life simulation game, based on real events from a simulation, not fiction you invent.
+
+    The only real residents of this town are: {{roster}}
+    Do not introduce, name, or refer to any person who is not on this list. Every character in the recap must be one of these people.
+
+    The current in-world date and time is: {{now}}
+    Everything below happened on or before this date and time. Do not invent an earlier scene, a different day, or a "meanwhile, earlier that week" flashback that isn't directly supported by the material below - if something isn't given below, it did not happen and must not appear.
+
+    Here is what has happened so far, drawn from each resident's diary:
+
+    {{diary}}
+
+    Here are the conversations that took place:
+
+    {{conversations}}
+
+    Write a clear, engaging prose recap of what has happened, in past tense, third person, like a narrator catching a reader up on a story. Prioritize what actually happened and what people said over describing scenery, weather, or mood - a touch of atmosphere is fine, but don't let it crowd out the events. If a stretch had little or nothing happen, say so briefly rather than inventing scene-setting to fill the space. Keep it only as long as the material actually warrants - do not pad it out. Only use what is given above - do not invent characters, events, locations, or details that are not directly supported by this material, and do not repurpose a real conversation into a different day or a different set of participants than it actually happened with. You can mention the current in-world time naturally if it's useful, but do not end with a formal paragraph summarizing where everyone stands.
+
+  continuation: |
+    You are continuing the story of a small town for a life simulation game, based on real new events from a simulation, not fiction you invent.
+
+    The only real residents of this town are: {{roster}}
+    Do not introduce, name, or refer to any person who is not on this list. Every character in this passage must be one of these people.
+
+    STORY SO FAR (already written and established - do not restate, summarize, or rewrite any of this, it is here only so you understand the tone and continuity):
+    {{storySoFar}}
+
+    The current in-world date and time is: {{now}}
+    The new material below happened on or before this date and time. Do not invent an earlier scene, a different day, or a "meanwhile, earlier" flashback that isn't directly supported by the material below - if something isn't given below or in the story so far, it did not happen and must not appear.
+
+    Here is what is NEW since the story above was last updated, drawn from each resident's diary:
+
+    {{diary}}
+
+    Here are the new conversations that took place:
+
+    {{conversations}}
+
+    Write ONLY the next passage of the story, continuing directly from where it left off, in the same voice and tense. Prioritize what actually happened and what people said over describing scenery, weather, or mood - a touch of atmosphere is fine, but don't let it crowd out the events, and don't re-describe light, weather, or setting you've already established recently. If this stretch had little or nothing happen, say so briefly in a sentence or two rather than inventing a full scene to fill the space. Keep the length proportional to how much actually happened - do not pad it out. Do not include a heading or any re-summary of what came before. Only use what is given above as new material - do not invent events, locations, or details that are not directly supported by this material, do not repurpose a real conversation into a different day or a different set of participants than it actually happened with, and do not contradict anything already established. You can mention the current in-world time naturally if it's useful, but do not end with a formal paragraph summarizing where everyone stands.
+
+  compact: |
+    Below is a running summary of a town's story, followed by later passages of that story that are not yet covered by it.
+
+    Existing summary (may be empty if this is the first time):
+    {{summary}}
+
+    Passages to fold in:
+    {{passages}}
+
+    Rewrite the summary so it covers the existing summary AND the new passages together, as one continuous account.
+
+    This summary is not shown to readers. It exists so a narrator can continue the story without being given every earlier passage in full, so it must preserve what a writer would need for continuity: who these people are to each other, what has actually happened between them, unresolved threads, and anything established that later passages must not contradict.
+
+    Write plain past-tense prose, no headings or bullet points. Be compact - aim for a few paragraphs at most - but never drop a named person or a concrete event just to save room. Do not invent anything that is not in the material above.
+
+  generateCharacter: |
+    Invent an original resident of a small town for a life simulation game.
+
+    Names already in use, your character's name (first and last) must NOT match or closely resemble any of these: {{existingNames}}
+
+    Respond with only a json object, no markdown code fences, no commentary, in exactly this shape:
+    {"name": "First Last", "memories": ["...", "...", "...", "...", "..."]}
+
+    Rules for "memories":
+    - Provide 5 to 7 entries.
+    - Each entry is a separate, specific sentence written in third person, starting with the character's first name.
+    - Together they must cover: their job or daily role, at least two distinct personality traits (not just "friendly" or "kind" alone - be specific and a little unusual), one meaningful relationship or social dynamic (family, friend, rival, unrequited crush, etc.), one personal goal or desire, and one flaw, fear, secret, or contradiction that makes them feel like a real person rather than a stock character.
+    - Avoid generic filler like "X likes reading" as the only trait - go deeper into why, or pair it with something more surprising.
+    - Do not repeat the same idea across multiple entries.
