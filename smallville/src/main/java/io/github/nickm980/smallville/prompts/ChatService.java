@@ -9,12 +9,15 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.nickm980.smallville.Util;
 import io.github.nickm980.smallville.World;
@@ -108,9 +111,61 @@ public class ChatService implements Prompts {
 	    .setPrompt(SmallvilleConfig.getPrompts().getPlans().getShortTerm())
 	    .build();
 
-	String response = chat.sendChat(prompt, .7);
+	String response = chat.sendChat(prompt.asJsonResponse(), .7);
+	List<Plan> plans = parsePlansJson(response);
 
-	return parsePlans(response);
+	if (plans.isEmpty()) {
+	    // The model ignored the format request or returned a shape we can't
+	    // use. Falling back keeps the tick productive instead of leaving the
+	    // agent with no plans at all.
+	    LOG.warn("[Plans] Could not read plans as JSON, falling back to line parsing");
+	    plans = parsePlans(response);
+	}
+
+	return plans;
+    }
+
+    /**
+     * Reads the {@code {"plans": [{"time","location","activity"}, ...]}} shape
+     * the short-term prompt asks for.
+     * <p>
+     * Returns an empty list rather than throwing, so the caller can fall back
+     * to line parsing.
+     */
+    private List<Plan> parsePlansJson(String response) {
+	List<Plan> plans = new ArrayList<>();
+
+	try {
+	    JsonNode entries = new ObjectMapper().readTree(Util.stripCodeFence(response)).path("plans");
+
+	    if (!entries.isArray()) {
+		return plans;
+	    }
+
+	    for (JsonNode entry : entries) {
+		String time = entry.path("time").asText("").trim();
+		String location = entry.path("location").asText("").trim();
+		String activity = entry.path("activity").asText("").trim();
+		LocalDateTime start = parseTime(time);
+
+		if (start == null || activity.isEmpty()) {
+		    LOG.warn("[Plans] Skipping entry with no usable time or activity: " + entry);
+		    continue;
+		}
+
+		// Rebuilt into the same one-line shape the rest of the prompts
+		// show as examples, so downstream prompts see a consistent
+		// format regardless of which parse path produced the plan.
+		String description = location.isEmpty() ? time + ", " + activity
+			: time + " at " + location + ", " + activity;
+
+		plans.add(new Plan(description, start));
+	    }
+	} catch (Exception e) {
+	    LOG.warn("[Plans] Response was not valid JSON: " + e.getMessage());
+	}
+
+	return plans;
     }
 
     @Override
@@ -185,62 +240,104 @@ public class ChatService implements Prompts {
 	return new Conversation(participantNames, dialogs);
     }
 
+    /**
+     * A clock time anywhere in a line: "9:00 am", "2:30PM", "14:00". The
+     * meridiem is optional so a model that answers in 24-hour time still
+     * parses - format strictness is not what keeps prose out of the plan list,
+     * {@link #stripPreamble} is.
+     */
+    private static final Pattern TIME = Pattern.compile("(\\d{1,2}):(\\d{2})(?:\\s*([AaPp])\\.?[Mm]\\.?)?");
+
+    /**
+     * A line that opens with its timestamp, allowing for bullets and list
+     * numbering ("- 9:00 am ...", "3. 9:00 am ...").
+     */
+    private static final Pattern ANCHORED_TIME = Pattern
+	.compile("^[\\s\\-*•>]*(?:\\d+[.)]\\s+)?\\d{1,2}:\\d{2}");
+
     @Override
     public List<Plan> parsePlans(String input) {
 	List<Plan> plans = new ArrayList<>();
 
-	String[] lines = input.split("\n");
-
-	for (String line : lines) {
-	    LocalDateTime start = null;
-
-	    try {
-		start = parseTime(input, line);
-	    } catch (Exception e) {
-		LOG.error("Could not parse time");
-		continue;
-	    }
+	for (String line : stripPreamble(input.split("\\r?\\n"))) {
+	    LocalDateTime start = parseTime(line);
 
 	    if (start == null) {
 		continue;
 	    }
 
-	    Plan plan = new Plan(line, start);
-	    plans.add(plan);
+	    plans.add(new Plan(line.trim(), start));
 	}
 
 	return plans;
     }
 
-    private LocalDateTime parseTime(String input, String line) throws DateTimeParseException {
-	String trimmed = line.trim();
+    /**
+     * Drops any conversational preamble written before the first real plan
+     * line.
+     * <p>
+     * Models sometimes answer with "Alright, let me figure out what's going on
+     * here. It's 10:30 PM and Maria is at the cafe..." before listing the
+     * plan. Treating every line containing a time as a plan stored that
+     * sentence verbatim as a diary entry; requiring the time to start the line
+     * instead broke the equally common style where the time trails the
+     * activity ("feed the animals from 3:00 PM - 4:00 PM").
+     * <p>
+     * Both are handled by anchoring only to find where the plan begins: if any
+     * line opens with a timestamp, everything before the first such line is
+     * preamble and is discarded. Otherwise nothing is dropped and every line
+     * carrying a time is considered, which is the trailing-timestamp style.
+     */
+    private static List<String> stripPreamble(String[] lines) {
+	List<String> all = List.of(lines);
 
-	if (trimmed.isBlank()) {
+	for (int i = 0; i < lines.length; i++) {
+	    if (ANCHORED_TIME.matcher(lines[i]).find()) {
+		return all.subList(i, all.size());
+	    }
+	}
+
+	return all;
+    }
+
+    /**
+     * The first clock time in {@code text}, or null if there isn't a usable
+     * one. Never throws - an unparseable line is skipped, not fatal.
+     */
+    private static LocalDateTime parseTime(String text) {
+	if (text == null || text.isBlank()) {
 	    return null;
 	}
 
-	String[] splitPlan = trimmed.split("\\d+", 2); // split after first number
+	Matcher matcher = TIME.matcher(text);
 
-	// A real plan line starts with its timestamp ("9:00 am at the..."), so the
-	// text before the first digit should be empty/near-empty. If the first digit
-	// sequence shows up well into the line, it's a stray number inside a sentence
-	// (e.g. a conversational preamble mentioning "10:30 PM"), not a timestamp -
-	// treat it the same as a line with no time at all instead of parsing it.
-	if (splitPlan.length == 1 || splitPlan[0].length() > 5) {
-	    LOG.warn("Temporal memory possibly missing a time. " + line);
+	if (!matcher.find()) {
 	    return null;
 	}
 
-	int index = input.indexOf(splitPlan[1]) - 2;
+	int hour = Integer.parseInt(matcher.group(1));
+	int minute = Integer.parseInt(matcher.group(2));
+	String meridiem = matcher.group(3);
 
-	if (index == -1) {
-	    index++;
+	if (minute > 59) {
+	    return null;
 	}
 
-	String time = input.substring(index, index + 8).trim().toUpperCase();
-	DateTimeFormatter formatter = DateTimeFormatter.ofPattern("h:mm a");
+	if (meridiem != null) {
+	    if (hour < 1 || hour > 12) {
+		return null;
+	    }
 
-	return LocalDateTime.of(LocalDate.now(), LocalTime.parse(time, formatter));
+	    hour = hour % 12;
+
+	    if (meridiem.equalsIgnoreCase("p")) {
+		hour += 12;
+	    }
+	} else if (hour > 23) {
+	    return null;
+	}
+
+	return LocalDateTime.of(LocalDate.now(), LocalTime.of(hour, minute));
     }
 
     @Override

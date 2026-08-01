@@ -7,7 +7,7 @@ import java.util.Map;
 public abstract class PromptRequest {
     private String content;
     private String assistant;
-    private String function;
+    private boolean jsonResponse;
 
     public PromptRequest(String content) {
 	this.content = content;
@@ -19,16 +19,19 @@ public abstract class PromptRequest {
 	this.assistant = assistant;
     }
 
-    public boolean isFunctional() {
-	return function != null && !function.isEmpty();
+    /**
+     * Whether the model should be constrained to return a JSON object.
+     * <p>
+     * Only set for prompts that actually ask for JSON - the API rejects the
+     * request if the word "json" never appears in the prompt itself.
+     */
+    public boolean isJsonResponse() {
+	return jsonResponse;
     }
 
-    public void setFunction(String function) {
-	this.function = function;
-    }
-   
-    public String getFunction() {
-	return function;
+    public PromptRequest asJsonResponse() {
+	this.jsonResponse = true;
+	return this;
     }
 
     public String getContent() {

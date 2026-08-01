@@ -2,6 +2,7 @@ package io.github.nickm980.smallville.llm;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
@@ -12,6 +13,7 @@ import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import io.github.nickm980.smallville.Settings;
 import io.github.nickm980.smallville.config.SmallvilleConfig;
@@ -105,35 +107,22 @@ public class ChatGPT implements LLM {
 	    .readTimeout(3, TimeUnit.MINUTES)
 	    .build();
 
-	String json = """
-		{
-			"model": "%model",
-			"messages": [%messages],
-			"temperature": %temperature, "max_tokens": 8000
+	// Built with Jackson rather than spliced into a string template. The
+	// template approach silently produced invalid JSON whenever a
+	// substitution was missed - the function-calling branch did exactly
+	// that, emitting a literal "%functions" - and it has now been dropped
+	// since nothing ever called setFunction.
+	ObjectNode payload = MAPPER.createObjectNode();
+	payload.put("model", SmallvilleConfig.getConfig().getModel());
+	payload.set("messages", MAPPER.valueToTree(List.of(prompt.build())));
+	payload.put("temperature", temperature);
+	payload.put("max_tokens", 8000);
 
-		""";
-
-	if (prompt.isFunctional()) {
-	    json += """
-	    	,
-	    	"functions": %functions,
-	    	"function_call": {"name": "%function_name"}
-	    	""";
+	if (prompt.isJsonResponse()) {
+	    payload.set("response_format", MAPPER.createObjectNode().put("type", "json_object"));
 	}
 
-	json += "}";
-	json = json.replaceAll("\t", "");
-	json = json.strip();
-	if (prompt.isFunctional()) {
-//	    json = json
-//		.replace("%functions", MAPPER.writeValueAsString(SmallvilleConfig.getFunctions().get("functions")));
-
-	    json = json.replace("%function_name", prompt.getFunction());
-	}
-
-	json = json.replace("%messages", MAPPER.writeValueAsString(prompt.build()));
-	json = json.replace("%temperature", String.valueOf(temperature));
-	json = json.replace("%model", SmallvilleConfig.getConfig().getModel());
+	String json = MAPPER.writeValueAsString(payload);
 
 	LOG.debug("[Chat Request Original]" + json);
 	LOG.debug("[Chat Request]" + prompt.getContent());
@@ -162,13 +151,6 @@ public class ChatGPT implements LLM {
 
 	
 	result = node.get("choices").get(0).get("message").get("content").asText();
-
-	try {
-	    Object res = node.get("choices").get(0).get("message").get("function_call").get("arguments");
-	    LOG.info(res.toString());
-	} catch (Exception e) {
-
-	}
 
 	LOG.debug("[Chat Response]" + node.get("choices").toPrettyString());
 

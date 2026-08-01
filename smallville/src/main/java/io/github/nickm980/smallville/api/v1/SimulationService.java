@@ -24,6 +24,7 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.github.nickm980.smallville.Util;
 import io.github.nickm980.smallville.World;
 import io.github.nickm980.smallville.api.v1.dto.*;
 import io.github.nickm980.smallville.entities.*;
@@ -261,12 +262,7 @@ public class SimulationService {
     }
 
     private GeneratedCharacterResponse parseGeneratedCharacter(String raw) {
-	String cleaned = raw.trim();
-
-	if (cleaned.startsWith("```")) {
-	    cleaned = cleaned.replaceAll("^```[a-zA-Z]*", "").replaceAll("```$", "").trim();
-	}
-
+	String cleaned = Util.stripCodeFence(raw);
 	ObjectMapper objectMapper = new ObjectMapper();
 
 	try {
