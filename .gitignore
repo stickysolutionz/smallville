@@ -11,3 +11,13 @@ out
 pages
 node_modules
 /backups/
+
+# Runtime data written by the backend. These paths are resolved relative to
+# the JVM working directory, which is the repo root when the jar is run as
+# documented in the README but smallville/ when run from the module dir - so
+# these are deliberately not anchored with a leading slash.
+story-data/
+location-images/
+
+# Ad-hoc API response dumps from manual curl testing
+story_*.json
