@@ -124,6 +124,16 @@ public final class SimulationController {
 	ctx.json(result);
     }
 
+    @Get("/story")
+    public void getStory(Context ctx) {
+	ctx.json(service.getStory());
+    }
+
+    @Post("/story/generate")
+    public void generateStory(Context ctx) {
+	ctx.json(service.generateStory());
+    }
+
     @Post("/agents")
     public void createAgent(Context ctx) {
 	CreateAgentRequest request = ctx
@@ -185,6 +195,12 @@ public final class SimulationController {
 	ctx.json(Map.of("success", true));
     }
 
+    @Delete("/locations/{name}")
+    public void deleteLocation(Context ctx) {
+	service.deleteLocation(ctx.pathParam("name"));
+	ctx.json(Map.of("success", true));
+    }
+
     @Post("/locations/{name}")
     public void changeLocationState(Context ctx) throws JsonMappingException, JsonProcessingException {
 	String location = ctx.pathParam("name");
@@ -195,6 +211,51 @@ public final class SimulationController {
 
 	service.setState(location, state);
 	ctx.json(Map.of("success", true));
+    }
+
+    private static final java.util.Set<String> ALLOWED_IMAGE_TYPES = java.util.Set
+	.of("image/png", "image/jpeg", "image/webp");
+    private static final long MAX_IMAGE_BYTES = 5_000_000L;
+
+    @Post("/locations/{name}/image")
+    public void uploadLocationImage(Context ctx) throws java.io.IOException {
+	String name = ctx.pathParam("name");
+	io.javalin.http.UploadedFile file = ctx.uploadedFile("image");
+
+	if (file == null) {
+	    ctx.status(400).json(Map.of("success", false, "message", "No image file provided"));
+	    return;
+	}
+
+	if (!ALLOWED_IMAGE_TYPES.contains(file.contentType())) {
+	    ctx.status(415).json(Map.of("success", false, "message", "Only PNG, JPEG, or WebP images are allowed"));
+	    return;
+	}
+
+	byte[] bytes = file.content().readAllBytes();
+
+	if (bytes.length > MAX_IMAGE_BYTES) {
+	    ctx.status(413).json(Map.of("success", false, "message", "Image must be under 5MB"));
+	    return;
+	}
+
+	service.saveLocationImage(name, bytes, file.contentType());
+	ctx.json(Map.of("success", true, "imageUrl", "/locations/" + name + "/image"));
+    }
+
+    @Get("/locations/{name}/image")
+    public void getLocationImage(Context ctx) {
+	String name = ctx.pathParam("name");
+	var meta = service.findLocationImage(name);
+	var bytes = service.readLocationImageBytes(name);
+
+	if (meta.isEmpty() || bytes.isEmpty()) {
+	    ctx.status(404);
+	    return;
+	}
+
+	ctx.contentType(meta.get().getContentType());
+	ctx.result(bytes.get());
     }
 
     @Get("/locations")
@@ -268,6 +329,12 @@ public final class SimulationController {
     public void stopSimulation(Context ctx) {
 	runner.stop();
 	ctx.json(Map.of("success", true, "running", runner.isRunning()));
+    }
+
+    @Post("/simulation/reset")
+    public void resetSimulation(Context ctx) {
+	service.resetSimulationData();
+	ctx.json(Map.of("success", true));
     }
 
     @Get("/simulation/status")

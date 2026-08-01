@@ -72,6 +72,11 @@ public class PromptBuilder {
 	return this;
     }
 
+    public PromptBuilder withOthers(List<Agent> others) {
+	data.put("others", others.stream().map(prompts::fromAgent).collect(java.util.stream.Collectors.toList()));
+	return this;
+    }
+
     public PromptBuilder withWorld(World world) {
 	data.put("world", WorldModel.fromWorld(agent.getFullName(), world));
 

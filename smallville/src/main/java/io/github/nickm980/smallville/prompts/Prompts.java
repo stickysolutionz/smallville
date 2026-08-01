@@ -44,6 +44,8 @@ public interface Prompts {
      */
     Conversation getConversationIfExists(Agent agent, Agent other, String topic);
 
+    Conversation getGroupConversation(Agent initiator, List<Agent> others, String topic);
+
     /**
      * Retrieves the current activity of an agent.
      * 

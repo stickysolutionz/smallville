@@ -109,7 +109,7 @@ public class ChatGPT implements LLM {
 		{
 			"model": "%model",
 			"messages": [%messages],
-			"temperature": %temperature, "max_tokens": 2000
+			"temperature": %temperature, "max_tokens": 8000
 
 		""";
 

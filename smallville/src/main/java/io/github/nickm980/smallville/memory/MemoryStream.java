@@ -124,6 +124,15 @@ public class MemoryStream {
 	return this.memories.remove(memory);
     }
 
+    /**
+     * Wipes accumulated diary history (observations, plans, reflections)
+     * while keeping the agent's Characteristics, since those define who
+     * the agent is rather than what's happened to them so far.
+     */
+    public void clearDiary() {
+	memories.removeIf(memory -> !(memory instanceof Characteristic));
+    }
+
     public void setPlans(List<Plan> plans, PlanType type) {
 	List<Plan> removed = getPlans(type);
 	memories.removeAll(removed);

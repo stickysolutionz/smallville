@@ -78,6 +78,13 @@ public class Repository<T> {
     }
 
     /**
+     * Removes every item from the repository.
+     */
+    public void clear() {
+	data.clear();
+    }
+
+    /**
      * Returns the number of items in the repository.
      *
      * @return the number of items in the repository

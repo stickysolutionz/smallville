@@ -152,8 +152,37 @@ public class ChatService implements Prompts {
 	    }
 	}
 
-	Conversation conversation = new Conversation(agent.getFullName(), other.getFullName(), dialogs);
+	Conversation conversation = new Conversation(List.of(agent.getFullName(), other.getFullName()), dialogs);
 	return conversation;
+    }
+
+    @Override
+    public Conversation getGroupConversation(Agent initiator, List<Agent> others, String topic) {
+	PromptRequest prompt = new PromptBuilder()
+	    .withAgent(initiator)
+	    .withOthers(others)
+	    .withObservation(topic)
+	    .setPrompt(SmallvilleConfig.getPrompts().getReactions().getGroupConversation())
+	    .build();
+
+	String response = chat.sendChat(prompt, .7);
+	String[] lines = response.split("\\r?\\n");
+
+	List<Dialog> dialogs = new ArrayList<>();
+	for (String line : lines) {
+	    String[] parts = line.split(":\\s+", 2);
+	    if (parts.length == 2) { // ignores all lines before the conversation
+		dialogs.add(new Dialog(parts[0], parts[1]));
+	    }
+	}
+
+	List<String> participantNames = new ArrayList<>();
+	participantNames.add(initiator.getFullName());
+	for (Agent other : others) {
+	    participantNames.add(other.getFullName());
+	}
+
+	return new Conversation(participantNames, dialogs);
     }
 
     @Override

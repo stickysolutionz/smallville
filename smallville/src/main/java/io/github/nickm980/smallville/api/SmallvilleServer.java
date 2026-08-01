@@ -24,6 +24,10 @@ public class SmallvilleServer {
 	this.analytics = analytics;
 	this.server = Javalin.create(config -> {
 	    config.showJavalinBanner = false;
+	    // Above the 5MB app-level image size cap, to leave headroom for
+	    // multipart boundary/field overhead - Javalin's own default is
+	    // well under what a real photo upload needs.
+	    config.http.maxRequestSize = 6_000_000L;
 	    config.plugins.enableCors(cors -> {
 		cors.add(it -> {
 		    it.anyHost();

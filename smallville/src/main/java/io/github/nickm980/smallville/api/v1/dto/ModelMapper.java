@@ -84,8 +84,7 @@ public class ModelMapper {
     public ConversationGroupResponse fromConversationGroup(Conversation conversation) {
 	ConversationGroupResponse result = new ConversationGroupResponse();
 
-	result.setTalker(conversation.getTalker());
-	result.setTalkee(conversation.getTalkee());
+	result.setParticipants(conversation.getParticipants());
 	result.setDialog(fromConversation(conversation));
 
 	if (conversation.getTime() != null) {

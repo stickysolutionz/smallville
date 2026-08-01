@@ -34,8 +34,14 @@ public class World {
 	    throw new SmallvilleException("Cannot have an empty conversation");
 	}
 
-	if (conversation.getTalker().equals(conversation.getTalkee())) {
-	    throw new SmallvilleException("Agents cannot have conversations with themselves");
+	List<String> participants = conversation.getParticipants();
+
+	if (participants.size() < 2) {
+	    throw new SmallvilleException("A conversation must have at least two participants");
+	}
+
+	if (new java.util.HashSet<>(participants).size() != participants.size()) {
+	    throw new SmallvilleException("A conversation cannot have duplicate participants");
 	}
 
 	conversations.save(UUID.randomUUID().toString(), conversation);
@@ -67,6 +73,22 @@ public class World {
 
     public boolean deleteAgent(String name) {
 	return agents.delete(name);
+    }
+
+    public boolean deleteLocation(String name) {
+	return locations.delete(name);
+    }
+
+    /**
+     * Wipes all conversations and every agent's diary history, leaving
+     * agents (and their characteristics) and locations untouched.
+     */
+    public void resetSimulationData() {
+	conversations.clear();
+	for (Agent agent : agents.all()) {
+	    agent.getMemoryStream().clearDiary();
+	    agent.setCurrentActivity("idle");
+	}
     }
 
     public List<Conversation> getConversationsAfter(LocalDateTime time) {

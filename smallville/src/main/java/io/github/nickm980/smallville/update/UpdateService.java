@@ -1,17 +1,22 @@
 package io.github.nickm980.smallville.update;
 
 import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.stream.Collectors;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.github.nickm980.smallville.World;
 import io.github.nickm980.smallville.config.SmallvilleConfig;
 import io.github.nickm980.smallville.entities.Agent;
+import io.github.nickm980.smallville.entities.Conversation;
 import io.github.nickm980.smallville.entities.Location;
 import io.github.nickm980.smallville.entities.SimulationTime;
 import io.github.nickm980.smallville.events.EventBus;
 import io.github.nickm980.smallville.events.agent.AgentUpdateEvent;
 import io.github.nickm980.smallville.llm.LLM;
+import io.github.nickm980.smallville.memory.Observation;
 import io.github.nickm980.smallville.prompts.ChatService;
 
 /**
@@ -83,7 +88,40 @@ public class UpdateService {
     }
 
     /**
-     * 
+     * Bypasses the normal AgentUpdate chain entirely - the proximity trigger
+     * that calls this already knows exactly who's participating, so there's
+     * no need to route through UpdatePlans/UpdateConversation's single-name
+     * NLP extraction (that pipeline stays reserved for the organic,
+     * agent-generated-observation case). Mirrors what UpdateConversation
+     * does for the pairwise case, generalized to N participants.
+     */
+    public void triggerGroupConversation(List<Agent> participants, String topic) {
+	LOG.info("Starting group conversation with " + participants.size() + " participants");
+
+	Agent initiator = participants.get(0);
+	List<Agent> others = participants.subList(1, participants.size());
+
+	Conversation conversation = chatService.getGroupConversation(initiator, others, topic);
+
+	List<Observation> memories = conversation
+	    .getDialog()
+	    .stream()
+	    .map(dialog -> {
+		Observation dialogMemory = new Observation(dialog.getMessage());
+		dialogMemory.setDialog(true);
+		return dialogMemory;
+	    })
+	    .collect(Collectors.toList());
+
+	for (Agent participant : participants) {
+	    participant.getMemoryStream().addAll(memories);
+	}
+
+	world.create(conversation);
+    }
+
+    /**
+     *
      * Asks a question to an agent and returns the response.
      * 
      * @param agent    The agent to ask the question to

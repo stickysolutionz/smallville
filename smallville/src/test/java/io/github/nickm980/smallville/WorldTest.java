@@ -48,17 +48,17 @@ public class WorldTest {
     public void test_world_conversation_creation() {
 	assertEquals(0, world.getConversationsAfter(LocalDateTime.now()).size());
 
-	Conversation conversation = new Conversation("none", "", List.of(new Dialog("john", "hi")));
+	Conversation conversation = new Conversation(List.of("none", "other"), List.of(new Dialog("john", "hi")));
 	world.create(conversation);
 
 	assertEquals(1, world.getConversationsAfter(LocalDateTime.now()).size());
 
 	assertThrows(SmallvilleException.class, () -> {
-	    world.create(new Conversation("name", "name", List.of(new Dialog("name", "message"))));
+	    world.create(new Conversation(List.of("name", "name"), List.of(new Dialog("name", "message"))));
 	});
 
 	assertThrows(SmallvilleException.class, () -> {
-	    world.create(new Conversation("name", "name", List.of()));
+	    world.create(new Conversation(List.of("name", "name"), List.of()));
 	});
     }
 }
