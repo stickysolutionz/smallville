@@ -18,6 +18,7 @@ node_modules
 # these are deliberately not anchored with a leading slash.
 story-data/
 location-images/
+world-data/
 
 # Ad-hoc API response dumps from manual curl testing
 story_*.json

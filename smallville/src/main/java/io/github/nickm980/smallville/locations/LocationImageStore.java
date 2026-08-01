@@ -88,6 +88,36 @@ public class LocationImageStore {
 	});
     }
 
+    /**
+     * Drops index entries, and their files, for locations that no longer
+     * exist. The index is keyed by location name, so without this a restored
+     * world keeps serving images for locations it no longer has.
+     */
+    public void pruneMissing(java.util.Set<String> existingLocations) {
+	Map<String, LocationImageMeta> index = loadIndex();
+	boolean changed = false;
+
+	for (Map.Entry<String, LocationImageMeta> entry : new HashMap<>(index).entrySet()) {
+	    if (existingLocations.contains(entry.getKey())) {
+		continue;
+	    }
+
+	    File orphan = IMAGE_DIR.resolve(entry.getValue().getFilename()).toFile();
+
+	    if (orphan.exists() && !orphan.delete()) {
+		LOG.warn("Could not delete orphaned image {}", entry.getValue().getFilename());
+	    }
+
+	    index.remove(entry.getKey());
+	    changed = true;
+	    LOG.info("Dropped image for location '{}', which no longer exists", entry.getKey());
+	}
+
+	if (changed) {
+	    saveIndex(index);
+	}
+    }
+
     private String extensionFor(String contentType) {
 	switch (contentType) {
 	case "image/png":

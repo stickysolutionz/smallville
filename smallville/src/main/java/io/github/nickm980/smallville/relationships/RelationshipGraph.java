@@ -55,6 +55,13 @@ public class RelationshipGraph {
 	}
     }
 
+    /**
+     * Sets a relationship outright, for restoring a saved world.
+     */
+    public void put(String a, String b, Relationship relationship) {
+	relationships.put(Pair.of(a, b), relationship);
+    }
+
     public void removeAgent(String name) {
 	relationships.keySet().removeIf(pair -> pair.involves(name));
     }

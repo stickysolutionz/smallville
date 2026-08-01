@@ -8,6 +8,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -44,6 +45,9 @@ import io.github.nickm980.smallville.memory.Observation;
 import io.github.nickm980.smallville.memory.Plan;
 import io.github.nickm980.smallville.memory.TemporalMemory;
 import io.github.nickm980.smallville.config.SmallvilleConfig;
+import io.github.nickm980.smallville.persistence.WorldMapper;
+import io.github.nickm980.smallville.persistence.WorldSnapshot;
+import io.github.nickm980.smallville.persistence.WorldStore;
 import io.github.nickm980.smallville.prompts.PromptBuilder;
 import io.github.nickm980.smallville.prompts.PromptRequest;
 import io.github.nickm980.smallville.relationships.Relationship;
@@ -59,7 +63,6 @@ public class SimulationService {
     private final UpdateService prompts;
     private final World world;
     private final LLM chat;
-    private int progress;
 
     // Tracks the last simulated time a location had a conversation, keyed by
     // location name, so agents lingering in the same room don't restart a
@@ -83,6 +86,7 @@ public class SimulationService {
     private final Random random = new Random(Settings.getSeed());
     private final StoryStore storyStore = new StoryStore();
     private final LocationImageStore imageStore = new LocationImageStore();
+    private final WorldStore worldStore = new WorldStore();
 
     /**
      * Guards every mutation of world state.
@@ -112,7 +116,6 @@ public class SimulationService {
 	this.mapper = new ModelMapper();
 	this.prompts = new UpdateService(llm, world);
 	this.chat = llm;
-	this.progress = 0;
     }
 
     /**
@@ -145,6 +148,40 @@ public class SimulationService {
 	    return action.get();
 	} finally {
 	    simulationLock.unlock();
+	}
+    }
+
+    /**
+     * Restores a previously saved world. Called once at startup, before the
+     * server accepts requests.
+     */
+    public void loadWorld() {
+	Optional<WorldSnapshot> snapshot = worldStore.load();
+
+	if (snapshot.isEmpty()) {
+	    LOG.info("No saved world found, starting fresh");
+	    return;
+	}
+
+	exclusively(() -> {
+	    WorldMapper.restore(world, snapshot.get());
+	    imageStore.pruneMissing(
+		    world.getLocations().stream().map(Location::getFullPath).collect(Collectors.toSet()));
+	});
+
+	LOG.info("Restored " + world.getAgents().size() + " agents and " + world.getLocations().size()
+		+ " locations from world-data/world.json");
+    }
+
+    /**
+     * Snapshots the world under the lock, then writes outside it - the file
+     * write must not hold up a tick.
+     */
+    public void saveWorld() {
+	try {
+	    worldStore.save(exclusivelyGet(() -> WorldMapper.toSnapshot(world)));
+	} catch (Exception e) {
+	    LOG.error("Failed to save the world", e);
 	}
     }
 
@@ -540,6 +577,7 @@ public class SimulationService {
 	exclusively(() -> {
 	    world.resetSimulationData();
 	    storyStore.clear();
+	    worldStore.clear();
 	    // Without this the cooldown survives the reset and the town stays
 	    // silent for up to an hour of simulated time afterwards, which
 	    // reads as the reset having broken conversations.
@@ -846,15 +884,29 @@ public class SimulationService {
 	SimulationTime.setStep(duration);
     }
 
-    public int getProgress() {
-	return progress;
-    }
-
     public void setState(String location, String state) {
 	exclusively(() -> world.setState(location, state));
     }
 
-    Map<UUID, MemoryStream> memories = new HashMap<UUID, MemoryStream>();
+    private static final int MAX_STANDALONE_STREAMS = 100;
+
+    /**
+     * Standalone memory streams for the client libraries, which use the server
+     * as a memory store without running a simulation.
+     * <p>
+     * Bounded and access-ordered: these are created by an endpoint with no
+     * matching delete, so an unbounded map here is a leak that grows for as
+     * long as the server runs.
+     */
+    private final Map<UUID, MemoryStream> memories = Collections
+	.synchronizedMap(new LinkedHashMap<UUID, MemoryStream>(16, 0.75f, true) {
+	    private static final long serialVersionUID = 1L;
+
+	    @Override
+	    protected boolean removeEldestEntry(Map.Entry<UUID, MemoryStream> eldest) {
+		return size() > MAX_STANDALONE_STREAMS;
+	    }
+	});
 
     public UUID createMemoryStream() {
 	UUID uuid = UUID.randomUUID();
@@ -864,7 +916,11 @@ public class SimulationService {
 
     public List<String> getMemories(UUID uuid, String query) {
 	MemoryStream stream = memories.get(uuid);
-	
+
+	if (stream == null) {
+	    throw new SmallvilleException("No memory stream with id " + uuid);
+	}
+
 	return stream
 	    .getRelevantMemories(query)
 	    .stream()
