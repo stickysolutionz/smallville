@@ -13,6 +13,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
@@ -61,6 +64,29 @@ public class SimulationService {
     private final StoryStore storyStore = new StoryStore();
     private final LocationImageStore imageStore = new LocationImageStore();
 
+    /**
+     * Guards every mutation of world state.
+     * <p>
+     * SimulationRunner drives ticks on its own scheduled thread while Javalin
+     * serves the dashboard from a separate pool, and both reach the same
+     * agents, locations and conversations. Reset-vs-tick is the collision a
+     * user actually hits. Fair so that a queued control action can't be
+     * starved by back-to-back ticks.
+     * <p>
+     * Reads are deliberately left unlocked - they may see a tick partway
+     * through, which is harmless for display, and locking them would stall the
+     * dashboard behind every LLM call. The underlying collections are
+     * concurrent so those reads are still safe.
+     */
+    private final ReentrantLock simulationLock = new ReentrantLock(true);
+
+    /**
+     * Long enough to outlast one agent's update (several sequential LLM calls,
+     * each with a 3 minute read timeout in the worst case) without leaving a
+     * clicked button hanging indefinitely.
+     */
+    private static final long LOCK_TIMEOUT_SECONDS = 90;
+
     public SimulationService(LLM llm, World world) {
 	this.world = world;
 	this.mapper = new ModelMapper();
@@ -69,16 +95,51 @@ public class SimulationService {
 	this.progress = 0;
     }
 
-    public void createMemory(CreateMemoryRequest request) {
-	Agent agent = world.getAgent(request.getName()).orElseThrow();
-	Observation observation = new Observation(request.getDescription());
-	observation.setReactable(request.isReactable());
-	agent.getMemoryStream().add(observation);
+    /**
+     * Runs {@code action} with exclusive access to world state.
+     *
+     * @throws SmallvilleException if the simulation stays busy past the timeout
+     */
+    private void exclusively(Runnable action) {
+	exclusivelyGet(() -> {
+	    action.run();
+	    return null;
+	});
+    }
 
-	if (observation.isReactable()) {
-	    SimulationTime.update();
-	    prompts.react(agent, observation.getDescription());
+    private <T> T exclusivelyGet(Supplier<T> action) {
+	boolean acquired;
+
+	try {
+	    acquired = simulationLock.tryLock(LOCK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+	} catch (InterruptedException e) {
+	    Thread.currentThread().interrupt();
+	    throw new SmallvilleException("Interrupted while waiting for the simulation");
 	}
+
+	if (!acquired) {
+	    throw new SmallvilleException("The simulation is busy processing a tick. Try again in a moment.");
+	}
+
+	try {
+	    return action.get();
+	} finally {
+	    simulationLock.unlock();
+	}
+    }
+
+    public void createMemory(CreateMemoryRequest request) {
+	exclusively(() -> {
+	    Agent agent = world.getAgent(request.getName()).orElseThrow();
+	    Observation observation = new Observation(request.getDescription());
+	    observation.setReactable(request.isReactable());
+	    agent.getMemoryStream().add(observation);
+
+	    if (observation.isReactable()) {
+		SimulationTime.update();
+		prompts.react(agent, observation.getDescription());
+	    }
+	});
     }
 
     public AgentStateResponse getAgentState(String name) {
@@ -132,10 +193,12 @@ public class SimulationService {
 
 	Agent agent = new Agent(request.getName(), characteristics, request.getActivity(), location);
 
-	if (world.create(agent)) {
-	    String traits = prompts.createTraitsWithCharacteristics(agent);
-	    agent.setTraits(traits);
-	}
+	exclusively(() -> {
+	    if (world.create(agent)) {
+		String traits = prompts.createTraitsWithCharacteristics(agent);
+		agent.setTraits(traits);
+	    }
+	});
     }
 
     public GeneratedCharacterResponse generateCharacter() {
@@ -228,6 +291,10 @@ public class SimulationService {
 	}
     }
 
+    /** Everything the story prompt needs, snapshotted in one locked read. */
+    private record StoryMaterial(String diary, String conversations, String roster) {
+    }
+
     private static final DateTimeFormatter STORY_DATE_FORMAT = DateTimeFormatter.ofPattern("EEEE, MMMM d");
     private static final DateTimeFormatter STORY_TIME_FORMAT = DateTimeFormatter.ofPattern("h:mm a");
     private static final DateTimeFormatter STORY_FULL_FORMAT = DateTimeFormatter.ofPattern("EEEE, MMMM d, h:mm a");
@@ -259,8 +326,16 @@ public class SimulationService {
 	Optional<StorySnapshot> previous = storyStore.load();
 	LocalDateTime since = previous.map(StorySnapshot::getAsOf).orElse(LocalDateTime.MIN);
 
-	String newDiaryText = collectNewDiaryText(since);
-	String newConversationText = collectNewConversationText(since);
+	// Gathered under the lock so the material can't be a half-updated view
+	// of a tick in progress. The LLM call below deliberately runs outside
+	// the lock - holding it across a network round trip would stall ticks
+	// for as long as the model takes to answer.
+	StoryMaterial material = exclusivelyGet(() -> new StoryMaterial(collectNewDiaryText(since),
+		collectNewConversationText(since),
+		world.getAgents().stream().map(Agent::getFullName).collect(Collectors.joining(", "))));
+
+	String newDiaryText = material.diary();
+	String newConversationText = material.conversations();
 
 	if (newDiaryText.isBlank() && newConversationText.isBlank()) {
 	    StoryResponse result = getStory();
@@ -270,7 +345,7 @@ public class SimulationService {
 	    return result;
 	}
 
-	String roster = world.getAgents().stream().map(Agent::getFullName).collect(Collectors.joining(", "));
+	String roster = material.roster();
 
 	String prompt = previous.isPresent()
 		? buildContinuationPrompt(previous.get().getStory(), newDiaryText, newConversationText, roster)
@@ -408,34 +483,50 @@ public class SimulationService {
     }
 
     public void createLocation(CreateLocationRequest request) {
-	if (world.getLocation(request.getName()).isPresent()) {
-	    throw new SmallvilleException("Location already exists");
-	}
+	exclusively(() -> {
+	    if (world.getLocation(request.getName()).isPresent()) {
+		throw new SmallvilleException("Location already exists");
+	    }
 
-	world.create(new Location(request.getName()));
+	    world.create(new Location(request.getName()));
+	});
     }
 
     public void deleteAgent(String name) {
-	if (!world.getAgent(name).isPresent()) {
-	    throw new AgentNotFoundException(name);
-	}
+	exclusively(() -> {
+	    if (!world.getAgent(name).isPresent()) {
+		throw new AgentNotFoundException(name);
+	    }
 
-	world.deleteAgent(name);
+	    world.deleteAgent(name);
+	});
     }
 
     public void deleteLocation(String name) {
-	if (!world.getLocation(name).isPresent()) {
-	    throw new LocationNotFoundException(name);
-	}
+	exclusively(() -> {
+	    if (!world.getLocation(name).isPresent()) {
+		throw new LocationNotFoundException(name);
+	    }
 
-	world.deleteLocation(name);
+	    world.deleteLocation(name);
+	    // Otherwise the cooldown entry keeps the deleted location's name
+	    // alive forever, and a location later recreated under the same name
+	    // inherits a stale conversation timestamp.
+	    lastConversationAt.remove(name);
+	});
     }
 
     // Wipes conversations, every agent's diary, and the generated story -
     // agents, locations, and simulation timing/state are left untouched.
     public void resetSimulationData() {
-	world.resetSimulationData();
-	storyStore.clear();
+	exclusively(() -> {
+	    world.resetSimulationData();
+	    storyStore.clear();
+	    // Without this the cooldown survives the reset and the town stays
+	    // silent for up to an hour of simulated time afterwards, which
+	    // reads as the reset having broken conversations.
+	    lastConversationAt.clear();
+	});
     }
 
     public List<Map<String, Object>> getCharacteristics(String name) {
@@ -451,19 +542,23 @@ public class SimulationService {
     }
 
     public void addCharacteristic(String name, String description) {
-	Agent agent = world.getAgent(name).orElseThrow(() -> new AgentNotFoundException(name));
-	agent.getMemoryStream().add(new Characteristic(description));
+	exclusively(() -> {
+	    Agent agent = world.getAgent(name).orElseThrow(() -> new AgentNotFoundException(name));
+	    agent.getMemoryStream().add(new Characteristic(description));
+	});
     }
 
     public void removeCharacteristic(String name, int index) {
-	Agent agent = world.getAgent(name).orElseThrow(() -> new AgentNotFoundException(name));
-	List<Characteristic> characteristics = agent.getMemoryStream().getCharacteristics();
+	exclusively(() -> {
+	    Agent agent = world.getAgent(name).orElseThrow(() -> new AgentNotFoundException(name));
+	    List<Characteristic> characteristics = agent.getMemoryStream().getCharacteristics();
 
-	if (index < 0 || index >= characteristics.size()) {
-	    throw new SmallvilleException("Invalid characteristic index: " + index);
-	}
+	    if (index < 0 || index >= characteristics.size()) {
+		throw new SmallvilleException("Invalid characteristic index: " + index);
+	    }
 
-	agent.getMemoryStream().remove(characteristics.get(index));
+	    agent.getMemoryStream().remove(characteristics.get(index));
+	});
     }
 
     public List<MemoryResponse> getMemoriesOfAgent(String agentName) {
@@ -505,17 +600,35 @@ public class SimulationService {
 	    throw new SmallvilleException("Must create an agent before changing the state");
 	}
 
-	SimulationTime.update();
+	exclusively(SimulationTime::update);
 
-	for (Agent agent : world.getAgents()) {
-	    try {
-		prompts.updateAgent(agent);
-	    } catch (Exception e) {
-		LOG.error("Failed to update agent " + agent.getFullName() + ", skipping for this tick", e);
-	    }
+	// Locked per agent rather than across the whole tick. A tick is several
+	// sequential LLM calls per agent and can run for minutes; holding the
+	// lock throughout would make Reset or Add Agent block for that long. The
+	// agent update is the meaningful atomic unit anyway, and releasing
+	// between agents lets a control action land cleanly in the gap.
+	List<String> names = world.getAgents().stream().map(Agent::getFullName).collect(Collectors.toList());
+
+	for (String name : names) {
+	    exclusively(() -> {
+		// May have been deleted, or the whole world reset, while an
+		// earlier agent in this same tick was still being updated.
+		Optional<Agent> agent = world.getAgent(name);
+
+		if (agent.isEmpty()) {
+		    LOG.info("Agent " + name + " disappeared mid-tick, skipping");
+		    return;
+		}
+
+		try {
+		    prompts.updateAgent(agent.get());
+		} catch (Exception e) {
+		    LOG.error("Failed to update agent " + name + ", skipping for this tick", e);
+		}
+	    });
 	}
 
-	triggerGroupConversations();
+	exclusively(this::triggerGroupConversations);
     }
 
     private static final int MAX_GROUP_PARTICIPANTS = 5;
@@ -615,7 +728,7 @@ public class SimulationService {
     }
 
     public void setState(String location, String state) {
-	world.setState(location, state);
+	exclusively(() -> world.setState(location, state));
     }
 
     Map<UUID, MemoryStream> memories = new HashMap<UUID, MemoryStream>();

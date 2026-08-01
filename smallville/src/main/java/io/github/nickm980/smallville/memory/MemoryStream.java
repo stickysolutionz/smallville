@@ -6,6 +6,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 import java.util.stream.DoubleStream;
 import java.util.stream.Stream;
@@ -14,10 +15,16 @@ import java.util.stream.Stream;
  * Includes plans, observations, and characteristics
  */
 public class MemoryStream {
+    /**
+     * Copy-on-write because the simulation thread appends here throughout a
+     * tick while HTTP threads iterate it to render diaries and build the
+     * story. Snapshot iteration is what matters; the copy cost on append is
+     * irrelevant next to the LLM call that produced the memory.
+     */
     private List<Memory> memories;
 
     public MemoryStream() {
-	this.memories = new ArrayList<Memory>();
+	this.memories = new CopyOnWriteArrayList<Memory>();
     }
 
     public void prunePlans(PlanType type) {

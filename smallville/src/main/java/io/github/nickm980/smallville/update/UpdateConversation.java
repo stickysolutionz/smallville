@@ -48,18 +48,21 @@ public class UpdateConversation extends AgentUpdate {
 
 	Conversation conversation = converter.getConversationIfExists(agent, other, observation);
 
-	List<Observation> memories = conversation
-	    .getDialog()
-	    .stream()
-	    .map(dialog -> {
-		Observation dialogMemory = new Observation(dialog.getMessage());
-		dialogMemory.setDialog(true);
-		return dialogMemory;
-	    })
-	    .collect(Collectors.toList());
+	// Per participant, not shared - see the matching comment in
+	// UpdateService.triggerGroupConversation.
+	for (Agent participant : List.of(agent, other)) {
+	    List<Observation> memories = conversation
+		.getDialog()
+		.stream()
+		.map(dialog -> {
+		    Observation dialogMemory = new Observation(dialog.asMemoryFor(participant.getFullName()));
+		    dialogMemory.setDialog(true);
+		    return dialogMemory;
+		})
+		.collect(Collectors.toList());
 
-	agent.getMemoryStream().addAll(memories);
-	other.getMemoryStream().addAll(memories);
+	    participant.getMemoryStream().addAll(memories);
+	}
 
 	world.create(conversation);
 	return false;

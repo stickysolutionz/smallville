@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -91,8 +92,20 @@ public class World {
 	}
     }
 
+    /**
+     * Conversations that started strictly after {@code time}.
+     * <p>
+     * This previously ignored its argument and returned every conversation
+     * ever recorded, so the caller asking for "conversations in the last
+     * timestep" was really re-serving the whole history on every dashboard
+     * poll.
+     */
     public List<Conversation> getConversationsAfter(LocalDateTime time) {
-	return conversations.all();
+	return conversations
+	    .all()
+	    .stream()
+	    .filter(conversation -> conversation.getTime() != null && conversation.getTime().isAfter(time))
+	    .collect(Collectors.toList());
     }
 
     public List<Conversation> getAllConversations() {

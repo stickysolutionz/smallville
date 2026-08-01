@@ -103,17 +103,21 @@ public class UpdateService {
 
 	Conversation conversation = chatService.getGroupConversation(initiator, others, topic);
 
-	List<Observation> memories = conversation
-	    .getDialog()
-	    .stream()
-	    .map(dialog -> {
-		Observation dialogMemory = new Observation(dialog.getMessage());
-		dialogMemory.setDialog(true);
-		return dialogMemory;
-	    })
-	    .collect(Collectors.toList());
-
+	// Built per participant rather than once and shared. Beyond needing each
+	// agent's own point of view, the memories must be distinct objects:
+	// UpdateMemoryWeights calls setImportance on them, so sharing instances
+	// would let one agent's weighting silently rewrite everyone else's.
 	for (Agent participant : participants) {
+	    List<Observation> memories = conversation
+		.getDialog()
+		.stream()
+		.map(dialog -> {
+		    Observation dialogMemory = new Observation(dialog.asMemoryFor(participant.getFullName()));
+		    dialogMemory.setDialog(true);
+		    return dialogMemory;
+		})
+		.collect(Collectors.toList());
+
 	    participant.getMemoryStream().addAll(memories);
 	}
 

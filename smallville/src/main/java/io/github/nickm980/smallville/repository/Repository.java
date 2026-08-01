@@ -1,9 +1,9 @@
 package io.github.nickm980.smallville.repository;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -12,10 +12,16 @@ import java.util.stream.Collectors;
  * @param <T> the type of items stored in the repository
  */
 public class Repository<T> {
+    /**
+     * Concurrent because the simulation thread writes here on every tick while
+     * the HTTP threads serving the dashboard read continuously. A plain
+     * HashMap throws ConcurrentModificationException from all() as soon as a
+     * poll overlaps a tick that records a conversation.
+     */
     public Map<String, RepositoryItem<T>> data;
 
     public Repository() {
-	data = new HashMap<String, RepositoryItem<T>>();
+	data = new ConcurrentHashMap<String, RepositoryItem<T>>();
     }
 
     /**
@@ -26,14 +32,7 @@ public class Repository<T> {
      * @return true if the item was successfully saved, false otherwise
      */
     public boolean save(String id, T item) {
-	boolean result = false;
-
-	if (!data.containsKey(id)) {
-	    data.put(id, new RepositoryItem<T>(item));
-	    result = true;
-	}
-
-	return result;
+	return data.putIfAbsent(id, new RepositoryItem<T>(item)) == null;
     }
 
     /**
