@@ -277,7 +277,7 @@ public class SimulationService {
 		    .setPrompt(SmallvilleConfig.getPrompts().getStory().getGenerateCharacter())
 		    .build();
 
-		GeneratedCharacterResponse candidate = parseGeneratedCharacter(chat.sendChat(request.asJsonResponse(), 1.0));
+		GeneratedCharacterResponse candidate = parseGeneratedCharacter(chat.sendChat(request.labelled("generateCharacter").asJsonResponse(), 1.0));
 
 		boolean collides = existingNames
 		    .stream()
@@ -405,7 +405,7 @@ public class SimulationService {
 
 	String passage;
 	try {
-	    passage = chat.sendChat(builder.build(), 0.7).trim();
+	    passage = chat.sendChat(builder.build().labelled("story"), 0.7).trim();
 	} catch (Exception e) {
 	    LOG.error("Failed to generate story", e);
 	    throw new SmallvilleException("Could not generate the story right now");
@@ -469,7 +469,7 @@ public class SimulationService {
 	    .build();
 
 	try {
-	    snapshot.setSummary(chat.sendChat(request, 0.3).trim());
+	    snapshot.setSummary(chat.sendChat(request.labelled("storyCompact"), 0.3).trim());
 	    snapshot.setSummarisedThrough(foldThrough);
 	    LOG.info("Compacted " + toFold.size() + " story passages into the running summary");
 	} catch (Exception e) {

@@ -11,6 +11,55 @@ public class GeneralConfig {
     private boolean simulationFile;
     private int maxRetries;
 
+    // Model routing, thinking mode and pricing. Defaults are applied here
+    // rather than relying on the yaml so an older config.yaml sitting next to
+    // the jar still starts.
+    private String cheapModel;
+    private String thinking;
+    private double inputPricePerMillion = 0.435;
+    private double cachedInputPricePerMillion = 0.003625;
+    private double outputPricePerMillion = 0.87;
+
+    public String getCheapModel() {
+	return cheapModel;
+    }
+
+    public void setCheapModel(String cheapModel) {
+	this.cheapModel = cheapModel;
+    }
+
+    public String getThinking() {
+	return thinking;
+    }
+
+    public void setThinking(String thinking) {
+	this.thinking = thinking;
+    }
+
+    public double getInputPricePerMillion() {
+	return inputPricePerMillion;
+    }
+
+    public void setInputPricePerMillion(double inputPricePerMillion) {
+	this.inputPricePerMillion = inputPricePerMillion;
+    }
+
+    public double getCachedInputPricePerMillion() {
+	return cachedInputPricePerMillion;
+    }
+
+    public void setCachedInputPricePerMillion(double cachedInputPricePerMillion) {
+	this.cachedInputPricePerMillion = cachedInputPricePerMillion;
+    }
+
+    public double getOutputPricePerMillion() {
+	return outputPricePerMillion;
+    }
+
+    public void setOutputPricePerMillion(double outputPricePerMillion) {
+	this.outputPricePerMillion = outputPricePerMillion;
+    }
+
     // Memory retrieval. Defaults are applied here rather than relying on the
     // yaml so an older config.yaml sitting next to the jar still starts.
     private double recencyHalfLifeHours = 8;

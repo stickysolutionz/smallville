@@ -84,13 +84,13 @@ export default function StoryPanel() {
           )}
           {!story?.exists && (
             <Text className="text-gray-400">
-              Nothing generated yet — click below whenever you want to know what's been happening.
+              Nothing generated yet — click below whenever you want to know what&apos;s been happening.
             </Text>
           )}
           {showCatchUpNudge && (
             <Text className="text-gray-400">
               {formatElapsed(story!.minutesSinceUpdate!)} has happened since then — whenever you
-              want it, it's ready.
+              want it, it&apos;s ready.
             </Text>
           )}
         </div>

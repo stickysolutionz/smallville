@@ -13,6 +13,8 @@ import CollapsibleSection from '../collapsible-section';
 import SimulationControls, { SimulationStatusBadge } from '../simulation-controls';
 import StoryPanel from './story-panel';
 import TownMap from './town-map';
+import UsagePanel from './usage-panel';
+import ConnectionBanner from '../connection-banner';
 
 export default function MapPage() {
   const [agents, setAgents] = useState<User[]>([]);
@@ -50,6 +52,8 @@ export default function MapPage() {
 
   return (
     <main className="p-4 md:p-10 mx-auto max-w-7xl space-y-6">
+      <ConnectionBanner />
+
       <CollapsibleSection
         title="Simulation"
         subtitle="Start/pause and adjust tick speed"
@@ -70,6 +74,7 @@ export default function MapPage() {
       )}
 
       <StoryPanel />
+      <UsagePanel />
     </main>
   );
 }

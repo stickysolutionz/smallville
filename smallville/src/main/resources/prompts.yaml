@@ -97,38 +97,48 @@ world:
     Shower: On
 
 plans:
+  # Invariant instructions first, volatile state last - see the note on
+  # longTerm below for why the ordering matters.
   shortTerm: |
+    You are breaking down one resident's next hour in a small town simulation.
+
+    Respond with only a json object, in exactly this shape:
+    {"plans": [{"time": "9:00 am", "location": "Red House: Kitchen", "activity": "make a pot of coffee"}]}
+
+    * "time" must be a clock time like "9:00 am".
+    * "location" must be one of the available locations, written exactly as given below.
+    * "activity" is what the resident is doing there, in a few words.
+    * Give 3 to 5 entries covering the next hour, in order, at roughly
+      15 minute intervals - not a single entry for the whole hour.
+
+    ---
+    Everything below is specific to right now and to this resident.
+
     {{world.description}}
     {{agent.summary}}
     Daily Requirement: {{#agent.plans}}{{description}};{{/agent.plans}}
     Relevant Memories: {{#memories.relevant}}{{description}}; {{/memories.relevant}}
     Observation: {{observation}}
 
-    Break down {{agent.name}}'s plan for the next hour starting at the current time.
+    The current time is {{date.time}}. Break down {{agent.name}}'s plan for the
+    next hour starting now.
 
-    The current time is {{date.time}}
-
-    Respond with only a json object, in exactly this shape:
-    {"plans": [{"time": "9:00 am", "location": "Red House: Kitchen", "activity": "make a pot of coffee"}]}
-
-    * "time" must be a clock time like "9:00 am".
-    * "location" must be one of the available locations, written exactly as given above.
-    * "activity" is what {{agent.name}} is doing there, in a few words.
-    * Give 3 to 5 entries covering the next hour, in order, at roughly
-      15 minute intervals - not a single entry for the whole hour.
-
+  # Everything invariant is deliberately FIRST and everything that changes per
+  # agent and per tick is LAST. DeepSeek's context cache matches on prefixes,
+  # and cached input costs a small fraction of fresh input. With the volatile
+  # world description at the top - as this prompt used to have it - the ~1500
+  # tokens of examples below could never be reused between calls, because the
+  # prefix differed every time.
   longTerm: |
-    {{world.description}}
-    {{agent.summary}}
-    Relevant Memories: {{#memories.relevant}}{{description}}; {{/memories.relevant}}
-    Observation ({{date.time}}): {{observation}}
-
-    * Only use the available locations
-    * Include the time {{agent.name}} wake's up and falls asleep
-    * 5-8 entries covering the big chunks of the day: waking up, a couple of main activities, meals, sleep.
+    You are writing one resident's plan for the day in a small town simulation.
 
     A plan is what someone intends before the day happens. It says where they
     mean to be and what they mean to do there - not how any of it turns out.
+
+    Rules:
+    * Only use the available locations given below.
+    * Include the time the resident wakes up and falls asleep.
+    * 5-8 entries covering the big chunks of the day: waking up, a couple of main activities, meals, sleep.
 
     This is the shape of a good plan. Note that it is ordinary, and that every
     entry stops at the intention:
@@ -156,11 +166,19 @@ plans:
     11:00 am at the Police Station, file a report about the theft;
     2:00 pm at the Cafe, get sidetracked by an argument and end up leaving early
 
-    It is currently {{date.full}}. Here is {{agent.name}}'s
-    plan today in broad strokes:
-
     Respond with only a json object, in exactly this shape:
     {"plans": [{"time": "8:00 am", "location": "Red House: Bedroom", "activity": "wake up and get dressed"}]}
+
+    ---
+    Everything below is specific to today and to this resident.
+
+    {{world.description}}
+    {{agent.summary}}
+    Relevant Memories: {{#memories.relevant}}{{description}}; {{/memories.relevant}}
+    Observation ({{date.time}}): {{observation}}
+
+    It is currently {{date.full}}. Write {{agent.name}}'s plan for today in
+    broad strokes.
 
   current: |
     {{world.description}}

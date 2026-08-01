@@ -331,6 +331,17 @@ public final class SimulationController {
 	ctx.json(Map.of("success", true, "running", runner.isRunning()));
     }
 
+    @Get("/usage")
+    public void getUsage(Context ctx) {
+	ctx.json(io.github.nickm980.smallville.llm.UsageTracker.snapshot());
+    }
+
+    @Post("/usage/reset")
+    public void resetUsage(Context ctx) {
+	io.github.nickm980.smallville.llm.UsageTracker.reset();
+	ctx.json(Map.of("success", true));
+    }
+
     @Post("/simulation/reset")
     public void resetSimulation(Context ctx) {
 	service.resetSimulationData();

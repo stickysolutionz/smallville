@@ -54,7 +54,7 @@ public class ChatService implements Prompts {
 	    .setPrompt(SmallvilleConfig.getPrompts().getMisc().getRankMemories())
 	    .build();
 
-	String response = chat.sendChat(prompt, .1);
+	String response = chat.sendChat(prompt.labelled("rankMemories").asCheap(), .1);
 	response = response.replace(",]", "]");
 
 	ObjectMapper objectMapper = new ObjectMapper();
@@ -85,7 +85,7 @@ public class ChatService implements Prompts {
 	    .setPrompt(SmallvilleConfig.getPrompts().getAgent().getAskQuestion())
 	    .build();
 
-	return chat.sendChat(prompt, .5);
+	return chat.sendChat(prompt.labelled("askQuestion"), .5);
     }
 
     @Override
@@ -98,7 +98,7 @@ public class ChatService implements Prompts {
 	    .setPrompt(SmallvilleConfig.getPrompts().getPlans().getLongTerm())
 	    .build();
 
-	String response = chat.sendChat(prompt.asJsonResponse(), .6);
+	String response = chat.sendChat(prompt.labelled("planDaily").asJsonResponse(), .6);
 	List<Plan> plans = parsePlansJson(response);
 
 	if (plans.isEmpty()) {
@@ -125,7 +125,7 @@ public class ChatService implements Prompts {
 	    .setPrompt(SmallvilleConfig.getPrompts().getPlans().getShortTerm())
 	    .build();
 
-	String response = chat.sendChat(prompt.asJsonResponse(), .7);
+	String response = chat.sendChat(prompt.labelled("planNextHour").asJsonResponse(), .7);
 	List<Plan> plans = parsePlansJson(response);
 
 	if (plans.isEmpty()) {
@@ -191,7 +191,7 @@ public class ChatService implements Prompts {
 	    .setPrompt(SmallvilleConfig.getPrompts().getPlans().getCurrent())
 	    .build();
 
-	String response = chat.sendChat(prompt, .5);
+	String response = chat.sendChat(prompt.labelled("currentActivity").asCheap(), .5);
 
 	LocalNLP nlp = new LocalNLP();
 	CurrentActivity activity = Util.parseAsClass(response, CurrentActivity.class);
@@ -210,7 +210,7 @@ public class ChatService implements Prompts {
 	    .setPrompt(SmallvilleConfig.getPrompts().getReactions().getConversation())
 	    .build();
 
-	String response = chat.sendChat(prompt, .7);
+	String response = chat.sendChat(prompt.labelled("conversationPair"), .7);
 	String[] lines = response.split("\\r?\\n");
 
 	List<Dialog> dialogs = new ArrayList<>();
@@ -235,7 +235,7 @@ public class ChatService implements Prompts {
 	    .setPrompt(SmallvilleConfig.getPrompts().getReactions().getGroupConversation())
 	    .build();
 
-	String response = chat.sendChat(prompt, .7);
+	String response = chat.sendChat(prompt.labelled("conversationGroup"), .7);
 	String[] lines = response.split("\\r?\\n");
 
 	List<Dialog> dialogs = new ArrayList<>();
@@ -314,7 +314,7 @@ public class ChatService implements Prompts {
 	    .setPrompt(SmallvilleConfig.getPrompts().getReactions().getConversationTone())
 	    .build();
 
-	String answer = chat.sendChat(prompt, .1).trim().toLowerCase();
+	String answer = chat.sendChat(prompt.labelled("conversationTone").asCheap(), .1).trim().toLowerCase();
 
 	if (answer.contains("warm")) {
 	    return 0.15;
@@ -428,7 +428,7 @@ public class ChatService implements Prompts {
 	    .setPrompt(SmallvilleConfig.getPrompts().getMisc().getCombineSentences())
 	    .build(); // might be able to use LocalNLP for this
 
-	String tenses = chat.sendChat(tensesPrompt, .1);
+	String tenses = chat.sendChat(tensesPrompt.labelled("combineSentences").asCheap(), .1);
 
 	PromptRequest changedPrompt = new PromptBuilder()
 	    .withAgent(agent)
@@ -438,7 +438,7 @@ public class ChatService implements Prompts {
 	    .setPrompt(SmallvilleConfig.getPrompts().getWorld().getObjectStates())
 	    .build();
 
-	String response = chat.sendChat(changedPrompt, .3);
+	String response = chat.sendChat(changedPrompt.labelled("objectStates").asCheap(), .3);
 
 	String[] lines = response.split("\n");
 	ObjectChangeResponse[] objects = new ObjectChangeResponse[lines.length];
@@ -481,7 +481,7 @@ public class ChatService implements Prompts {
 	    .setPrompt(SmallvilleConfig.getPrompts().getAgent().getReflectionQuestion())
 	    .build();
 
-	String query = lastNonBlankLine(chat.sendChat(prompt, .1));
+	String query = lastNonBlankLine(chat.sendChat(prompt.labelled("reflectionQuestion").asCheap(), .1));
 
 	LOG.debug("[Reflections] Question: " + query);
 
@@ -501,7 +501,7 @@ public class ChatService implements Prompts {
 	    .setPrompt(SmallvilleConfig.getPrompts().getAgent().getReflectionResult())
 	    .build();
 
-	String description = chat.sendChat(secondPrompt, .8);
+	String description = chat.sendChat(secondPrompt.labelled("reflectionInsight"), .8);
 
 	// retrieve just the insight. remove the because clause and the key
 	int index = description.lastIndexOf(":");
@@ -525,7 +525,7 @@ public class ChatService implements Prompts {
 	    .setPrompt(SmallvilleConfig.getPrompts().getReactions().getReaction())
 	    .build();
 
-	String response = chat.sendChat(prompt, .2);
+	String response = chat.sendChat(prompt.labelled("shouldReact").asCheap(), .2);
 	Reaction result = Util.parseAsClass(response, Reaction.class);
 
 	LOG.debug("reacting " + result.getAnswer());
@@ -556,7 +556,7 @@ public class ChatService implements Prompts {
 	    .setPrompt(SmallvilleConfig.getPrompts().getAgent().getCharacteristics())
 	    .build();
 
-	return chat.sendChat(prompt, .5);
+	return chat.sendChat(prompt.labelled("characteristics"), .5);
     }
 
     @Override
@@ -567,7 +567,7 @@ public class ChatService implements Prompts {
 	    .setPrompt(SmallvilleConfig.getPrompts().getReactions().getSay())
 	    .build();
 	
-	String result = chat.sendChat(request, .5);
+	String result = chat.sendChat(request.labelled("saySomething"), .5);
 	
 	return new Dialog(agent.getFullName(), result);
     }

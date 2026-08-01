@@ -2,6 +2,24 @@
 apiPath: https://api.deepseek.com/chat/completions
 # LLM model should support function calling
 model: deepseek-v4-pro
+# Model for the calls that are really classification rather than creative work
+# - ranking memories, choosing an activity, judging the tone of a conversation.
+# Roughly a third the price. Leave blank to send everything to `model`.
+cheapModel: deepseek-v4-flash
+
+# Thinking mode. Reasoning tokens are billed as output, and very little of what
+# this app asks for benefits from deliberation - a six line daily plan has been
+# seen carrying several hundred tokens of it. Leave blank to send nothing and
+# accept the model's default. Set to "disabled" to try switching it off, then
+# check /usage: if reasoningTokens drops to zero it took effect.
+thinking:
+
+# Prices per million tokens, used only to estimate cost on /usage. Update these
+# if DeepSeek's pricing changes. Note that prices double during peak hours
+# (09:00-12:00 and 14:00-18:00 Beijing time), which this does not model.
+inputPricePerMillion: 0.435
+cachedInputPricePerMillion: 0.003625
+outputPricePerMillion: 0.87
 timeFormat: h:mm a
 fullTimeFormat: EEEE, MMMM d, h:mm a
 yesterdayFormat: EEEE MMMM d
