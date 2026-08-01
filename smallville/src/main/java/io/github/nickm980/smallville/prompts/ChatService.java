@@ -213,13 +213,20 @@ public class ChatService implements Prompts {
     }
 
     private LocalDateTime parseTime(String input, String line) throws DateTimeParseException {
-	String[] splitPlan = line.split("\\d+", 2); // split after first number
+	String trimmed = line.trim();
 
-	if (line.isBlank()) {
+	if (trimmed.isBlank()) {
 	    return null;
 	}
 
-	if (splitPlan.length == 1) {
+	String[] splitPlan = trimmed.split("\\d+", 2); // split after first number
+
+	// A real plan line starts with its timestamp ("9:00 am at the..."), so the
+	// text before the first digit should be empty/near-empty. If the first digit
+	// sequence shows up well into the line, it's a stray number inside a sentence
+	// (e.g. a conversational preamble mentioning "10:30 PM"), not a timestamp -
+	// treat it the same as a line with no time at all instead of parsing it.
+	if (splitPlan.length == 1 || splitPlan[0].length() > 5) {
 	    LOG.warn("Temporal memory possibly missing a time. " + line);
 	    return null;
 	}

@@ -90,9 +90,10 @@ plans:
     Daily Requirement: {{#agent.plans}}{{description}};{{/agent.plans}}
     Relevant Memories: {{#memories.relevant}}{{description}}; {{/memories.relevant}}
     Observation: {{observation}}
-    
+
     * Give a duration for every plan
-    
+    * Respond with only the plan lines themselves, starting with the first timestamp - no preamble, reasoning, or commentary before it.
+
     Break down {{agent.name}}'s plan for the next hour starting at the current time.
 
     The current time is {{date.time}}
@@ -105,8 +106,11 @@ plans:
 
     * Only use the available locations
     * Include the time {{agent.name}} wake's up and falls asleep
+    * This should be an ordinary day of plausible, mostly routine activities consistent with who {{agent.name}} is. Do not invent a specific dramatic incident - a theft, an accident, a confrontation, a mystery - as a planned event with a predetermined outcome. A plan is a forecast of an ordinary day, not a finished plot. If something dramatic is going to happen, it should come from real interactions during the day, not be pre-written here as something that has already been decided.
+    * Keep it genuinely broad strokes: 5-8 entries covering the big chunks of the day (waking up, a couple of main activities, meals, sleep), not a detailed minute-by-minute itinerary.
+    * State only where {{agent.name}} intends to be and what they intend to do there. Do not narrate outcomes, decisions made along the way, distractions, or how it turns out ("decide to...", "get sidetracked and...", "end up..."). A plan is what someone intends before the day happens, not a recap of how it went - what actually happens emerges later, in the moment.
 
-    Example of a plan: 
+    Example of a plan:
     8:00 am at the Oak Hill College Dorm: Klaus Mueller's room: bed, wake up and get ready for school;
     9:00 am at the Oak Hill College Dorm: Klaus Mueller's room: desk, read and take notes for research paper;
     5:00 pm at the Oak Hill College Dorm: Kitchen, get ready for dinner
