@@ -97,8 +97,21 @@ public class ChatService implements Prompts {
 	    .setPrompt(SmallvilleConfig.getPrompts().getPlans().getLongTerm())
 	    .build();
 
-	String response = chat.sendChat(prompt, .6);
-	return List.of(new Plan(response.replace("\n", " "), LocalDateTime.now()));
+	String response = chat.sendChat(prompt.asJsonResponse(), .6);
+	List<Plan> plans = parsePlansJson(response);
+
+	if (plans.isEmpty()) {
+	    LOG.warn("[Plans] Could not read the daily plan as JSON, falling back to line parsing");
+	    plans = parsePlans(response);
+	}
+
+	if (plans.isEmpty()) {
+	    // Last resort, and the old behaviour: keep the whole answer as one
+	    // memory rather than losing the day's plan entirely.
+	    return List.of(new Plan(response.replace("\n", " "), LocalDateTime.now()));
+	}
+
+	return plans;
     }
 
     @Override

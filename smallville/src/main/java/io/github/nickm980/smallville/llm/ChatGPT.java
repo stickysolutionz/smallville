@@ -1,11 +1,9 @@
 package io.github.nickm980.smallville.llm;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
@@ -35,37 +33,43 @@ public class ChatGPT implements LLM {
     public String sendChat(PromptRequest prompt, double temperature) {
 	int maxRetries = SmallvilleConfig.getConfig().getMaxRetries();
 	int retryCount = 0;
-	String result = null;
-
-	ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
-	Semaphore semaphore = new Semaphore(0);
 
 	while (retryCount < maxRetries) {
+	    // Pausing the simulation calls shutdownNow(), which interrupts this
+	    // thread mid-request. That is a cancellation, not a failure worth
+	    // retrying - the old loop retried anyway and then swallowed the
+	    // InterruptedException from its own sleep, so every pause burned
+	    // through the full retry budget logging stack traces.
+	    if (Thread.currentThread().isInterrupted()) {
+		throw new SmallvilleException("Request cancelled");
+	    }
+
 	    try {
-		result = attemptRequest(prompt, temperature);
-		break;
+		return attemptRequest(prompt, temperature);
+	    } catch (InterruptedIOException e) {
+		Thread.currentThread().interrupt();
+		throw new SmallvilleException("Request cancelled");
 	    } catch (IOException | SmallvilleException e) {
 		retryCount++;
 		LOG.error("Request failed. Retrying... (Attempt " + retryCount + ")", e);
 
-		executor.schedule(() -> semaphore.release(), 2, TimeUnit.SECONDS);
+		if (retryCount >= maxRetries) {
+		    break;
+		}
 
+		// Exponential backoff. A flat 2s retry against a rate limit
+		// mostly just spends the budget faster.
 		try {
-		    semaphore.acquire();
+		    Thread.sleep(1000L * (1L << retryCount));
 		} catch (InterruptedException ex) {
 		    Thread.currentThread().interrupt();
+		    throw new SmallvilleException("Request cancelled");
 		}
 	    }
 	}
 
-	executor.shutdownNow();
-
-	if (result == null) {
-	    LOG.error("Failed to get a successful response after " + maxRetries + " attempts.");
-	    throw new SmallvilleException("Failed to get a successful response.");
-	}
-
-	return result;
+	LOG.error("Failed to get a successful response after " + maxRetries + " attempts.");
+	throw new SmallvilleException("Failed to get a successful response.");
     }
 
     

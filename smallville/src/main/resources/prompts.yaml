@@ -101,7 +101,8 @@ plans:
     * "time" must be a clock time like "9:00 am".
     * "location" must be one of the available locations, written exactly as given above.
     * "activity" is what {{agent.name}} is doing there, in a few words.
-    * Give an entry for each step of the next hour, in order.
+    * Give 3 to 5 entries covering the next hour, in order, at roughly
+      15 minute intervals - not a single entry for the whole hour.
 
   longTerm: |
     {{world.description}}
@@ -142,8 +143,11 @@ plans:
     11:00 am at the Police Station, file a report about the theft;
     2:00 pm at the Cafe, get sidetracked by an argument and end up leaving early
 
-    Today is Wednesday February 13. Here is {{agent.name}}'s
+    It is currently {{date.full}}. Here is {{agent.name}}'s
     plan today in broad strokes:
+
+    Respond with only a json object, in exactly this shape:
+    {"plans": [{"time": "8:00 am", "location": "Red House: Bedroom", "activity": "wake up and get dressed"}]}
 
   current: |
     {{world.description}}
