@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 
 import io.github.nickm980.smallville.api.v1.SimulationService;
 import io.github.nickm980.smallville.api.v1.dto.CreateAgentRequest;
+import io.github.nickm980.smallville.api.v1.dto.CreateMemoryRequest;
 import io.github.nickm980.smallville.entities.Agent;
 import io.github.nickm980.smallville.entities.Location;
 import io.github.nickm980.smallville.llm.LLM;
@@ -54,7 +55,7 @@ public class CharacteristicLatencyTest {
 
 	// Stands in for a tick: holds the simulation lock the way updateState
 	// does while an agent is being updated.
-	Thread tick = new Thread(() -> service.createLocation(request("Somewhere", holding, release)));
+	Thread tick = new Thread(() -> service.createMemory(lockHolder(holding, release)));
 	tick.setDaemon(true);
 	tick.start();
 
@@ -86,7 +87,7 @@ public class CharacteristicLatencyTest {
 	CountDownLatch holding = new CountDownLatch(1);
 	CountDownLatch release = new CountDownLatch(1);
 
-	Thread tick = new Thread(() -> service.createLocation(request("Elsewhere", holding, release)));
+	Thread tick = new Thread(() -> service.createMemory(lockHolder(holding, release)));
 	tick.setDaemon(true);
 	tick.start();
 
@@ -129,13 +130,59 @@ public class CharacteristicLatencyTest {
 	assertTrue(world.getAgent("Klaus Mueller").isPresent(), "the agent should exist immediately");
     }
 
-    /**
-     * A location request whose getName() blocks, so the calling thread parks
-     * inside the locked section and holds the simulation lock until released.
-     */
-    private static io.github.nickm980.smallville.api.v1.dto.CreateLocationRequest request(String name,
-	    CountDownLatch holding, CountDownLatch release) {
+    @Test
+    public void an_agent_and_a_location_can_be_added_while_the_world_is_locked() throws Exception {
+	// The create-agent form submits a new location and then the agent, so
+	// both used to wait out an in-flight agent update - twice over.
+	World world = worldWithAgent();
+	SimulationService service = new SimulationService(UNUSED_LLM, world);
+
+	CountDownLatch holding = new CountDownLatch(1);
+	CountDownLatch release = new CountDownLatch(1);
+
+	Thread tick = new Thread(() -> service.createMemory(lockHolder(holding, release)));
+	tick.setDaemon(true);
+	tick.start();
+
+	assertTrue(holding.await(5, TimeUnit.SECONDS), "the stand-in tick never took the lock");
+
+	try {
+	    CreateAgentRequest request = new CreateAgentRequest();
+	    request.setName("Klaus Mueller");
+	    request.setLocation("Tavern");
+	    request.setActivity("reading");
+	    request.setMemories(List.of("Klaus is a student"));
+
+	    long start = System.nanoTime();
+	    service.createLocation(locationRequest("Tavern"));
+	    service.createAgent(request);
+	    long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+
+	    assertTrue(elapsedMs < 1000, "adding a location and agent took " + elapsedMs + "ms");
+	    assertTrue(world.getLocation("Tavern").isPresent());
+	    assertTrue(world.getAgent("Klaus Mueller").isPresent());
+	} finally {
+	    release.countDown();
+	    tick.join(5000);
+	}
+    }
+
+    private static io.github.nickm980.smallville.api.v1.dto.CreateLocationRequest locationRequest(String name) {
 	return new io.github.nickm980.smallville.api.v1.dto.CreateLocationRequest() {
+	    @Override
+	    public String getName() {
+		return name;
+	    }
+	};
+    }
+
+    /**
+     * A memory request whose getName() blocks. createMemory reads it inside
+     * the locked section, so the calling thread parks there still holding the
+     * simulation lock - standing in for a tick mid agent-update.
+     */
+    private static CreateMemoryRequest lockHolder(CountDownLatch holding, CountDownLatch release) {
+	return new CreateMemoryRequest() {
 	    private boolean parked;
 
 	    @Override
@@ -151,7 +198,9 @@ public class CharacteristicLatencyTest {
 		    }
 		}
 
-		return name;
+		// Nobody by this name, so createMemory throws once released and
+		// the stand-in thread simply ends.
+		return "nobody";
 	    }
 	};
     }

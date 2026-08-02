@@ -69,7 +69,9 @@ public class SimulationService {
     // fresh conversation every single tick. Keyed per-location rather than
     // per-participant-pair since who actually joins a group conversation is
     // probabilistic and changes tick to tick.
-    private final Map<String, LocalDateTime> lastConversationAt = new HashMap<>();
+    // Concurrent because deleteLocation prunes it without taking the
+    // simulation lock, while the tick reads and writes it holding that lock.
+    private final Map<String, LocalDateTime> lastConversationAt = new java.util.concurrent.ConcurrentHashMap<>();
     /**
      * The shortest gap between two conversations in the same place. Only a
      * floor to stop one room producing a conversation on every consecutive
@@ -260,7 +262,14 @@ public class SimulationService {
 	// This also means a failed trait call no longer means a failed
 	// creation: previously the exception propagated and the agent was never
 	// added at all.
-	exclusively(() -> world.create(agent));
+	//
+	// No lock either. The agent repository is a ConcurrentHashMap and this
+	// is a single putIfAbsent, and updateState snapshots the agent list at
+	// the start of a tick - so someone added midway through simply joins
+	// from the next tick rather than racing the current one. Taking the
+	// lock meant a local map insert waited out an in-flight agent update,
+	// which is 30-45 seconds of model calls.
+	world.create(agent);
     }
 
     public GeneratedCharacterResponse generateCharacter() {
@@ -542,38 +551,42 @@ public class SimulationService {
 	return sb.toString();
     }
 
+    /*
+     * Adding and removing agents and locations does not take the simulation
+     * lock, for the same reason characteristic edits don't: these are single
+     * operations on concurrent collections, and a tick already tolerates the
+     * world changing underneath it - updateState snapshots the agent list up
+     * front and re-checks each agent still exists before updating it.
+     *
+     * The create-agent form can add a location and an agent in one submit, so
+     * locking these meant waiting out an in-flight agent update twice over.
+     */
     public void createLocation(CreateLocationRequest request) {
-	exclusively(() -> {
-	    if (world.getLocation(request.getName()).isPresent()) {
-		throw new SmallvilleException("Location already exists");
-	    }
+	if (world.getLocation(request.getName()).isPresent()) {
+	    throw new SmallvilleException("Location already exists");
+	}
 
-	    world.create(new Location(request.getName()));
-	});
+	world.create(new Location(request.getName()));
     }
 
     public void deleteAgent(String name) {
-	exclusively(() -> {
-	    if (!world.getAgent(name).isPresent()) {
-		throw new AgentNotFoundException(name);
-	    }
+	if (!world.getAgent(name).isPresent()) {
+	    throw new AgentNotFoundException(name);
+	}
 
-	    world.deleteAgent(name);
-	});
+	world.deleteAgent(name);
     }
 
     public void deleteLocation(String name) {
-	exclusively(() -> {
-	    if (!world.getLocation(name).isPresent()) {
-		throw new LocationNotFoundException(name);
-	    }
+	if (!world.getLocation(name).isPresent()) {
+	    throw new LocationNotFoundException(name);
+	}
 
-	    world.deleteLocation(name);
-	    // Otherwise the cooldown entry keeps the deleted location's name
-	    // alive forever, and a location later recreated under the same name
-	    // inherits a stale conversation timestamp.
-	    lastConversationAt.remove(name);
-	});
+	world.deleteLocation(name);
+	// Otherwise the cooldown entry keeps the deleted location's name alive
+	// forever, and a location later recreated under the same name inherits
+	// a stale conversation timestamp.
+	lastConversationAt.remove(name);
     }
 
     // Wipes conversations, every agent's diary, and the generated story -
