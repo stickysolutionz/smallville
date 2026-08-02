@@ -22,3 +22,8 @@ world-data/
 
 # Ad-hoc API response dumps from manual curl testing
 story_*.json
+
+# Local runtime override. SmallvilleConfig reads the working directory before
+# the copy inside the jar, so this is per-machine tuning rather than something
+# to ship - the committed defaults live in smallville/src/main/resources.
+/config.yaml
