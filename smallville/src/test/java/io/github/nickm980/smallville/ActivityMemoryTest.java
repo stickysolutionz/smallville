@@ -82,6 +82,54 @@ public class ActivityMemoryTest {
     }
 
     @Test
+    public void what_others_were_doing_is_witnessed_not_just_who_was_there() {
+	// People are learned by watching them. Recording only names meant an
+	// agent could stand beside somebody for hours and come away knowing
+	// nothing about them - while the conversation prompt quietly handed
+	// over that person's entire inner life instead.
+	World world = walmartWith("Joan", "Paul");
+	world.getAgent("Paul").orElseThrow().setCurrentActivity("arguing with the self-checkout machine");
+
+	Agent joan = world.getAgent("Joan").orElseThrow();
+
+	runActivityStep(world, joan, """
+		Activity: browsing the pet supplies
+		Location: Walmart
+		Emoji: 🛒
+		""");
+
+	String memory = lastMemoryOf(joan);
+
+	assertTrue(memory.contains("Paul was arguing with the self-checkout machine"),
+		"Joan should remember what she saw Paul doing, got: " + memory);
+    }
+
+    @Test
+    public void a_crowded_room_does_not_bury_the_agents_own_memory() {
+	World world = walmartWith("Joan", "A", "B", "C", "D", "E");
+
+	for (String name : new String[] { "A", "B", "C", "D", "E" }) {
+	    world.getAgent(name).orElseThrow().setCurrentActivity("milling about");
+	}
+
+	Agent joan = world.getAgent("Joan").orElseThrow();
+
+	runActivityStep(world, joan, """
+		Activity: browsing the pet supplies
+		Location: Walmart
+		Emoji: 🛒
+		""");
+
+	String memory = lastMemoryOf(joan);
+
+	assertEquals(3, memory.split("milling about", -1).length - 1,
+		"only a few of the room should be recorded, got: " + memory);
+	// The agent's own activity leads, before anyone else's. A memory
+	// describes the PREVIOUS activity, which here is the starting "idle".
+	assertTrue(memory.startsWith("idle at Walmart"), "the agent's own doing should lead, got: " + memory);
+    }
+
+    @Test
     public void someone_who_is_elsewhere_is_not_recorded_as_present() {
 	World world = walmartWith("Joan", "Paul");
 	world.create(new Location("Cottage"));

@@ -1,5 +1,6 @@
 package io.github.nickm980.smallville.update;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -138,13 +139,46 @@ public class UpdateCurrentActivity extends AgentUpdate {
 	    record.append(what.toLowerCase().contains(where.toLowerCase()) ? "" : " at " + where);
 	}
 
-	List<String> alsoHere = othersAt(agent, location, world);
+	// What the others were doing, not just that they were there. This is the
+	// only way anybody learns anything about anybody: people are worked out
+	// by watching them, not looked up. Before this, an agent could stand
+	// beside somebody for hours and come away knowing nothing, while the
+	// conversation prompt quietly handed over that person's whole inner life
+	// instead.
+	//
+	// Note this is deliberately NOT fed into the prompt that decides what to
+	// do next - putting other people's activities there made agents copy
+	// each other. Seeing what somebody did belongs in memory; it has no
+	// business steering your own choice.
+	List<String> witnessed = whatOthersWereDoing(agent, location, world);
 
-	if (!alsoHere.isEmpty()) {
-	    record.append(", where ").append(join(alsoHere)).append(alsoHere.size() == 1 ? " also was" : " also were");
+	if (!witnessed.isEmpty()) {
+	    record.append(", where ").append(join(witnessed));
 	}
 
 	return record.toString();
+    }
+
+    /**
+     * Up to a few of the people present and what each appeared to be doing.
+     */
+    private static List<String> whatOthersWereDoing(Agent agent, Location location, World world) {
+	List<String> seen = new ArrayList<>();
+
+	for (String name : othersAt(agent, location, world)) {
+	    Agent other = world.getAgent(name).orElse(null);
+	    String doing = other == null ? null : other.getCurrentActivity();
+
+	    seen.add(doing == null || doing.isBlank() ? name + " was there" : name + " was " + doing);
+
+	    // A crowded room would otherwise bury the agent's own memory of
+	    // themselves under everyone else's business.
+	    if (seen.size() == 3) {
+		break;
+	    }
+	}
+
+	return seen;
     }
 
     private static List<String> othersAt(Agent agent, Location location, World world) {

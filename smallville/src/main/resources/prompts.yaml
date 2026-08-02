@@ -14,11 +14,20 @@ reactions:
       description of the room, no narration.
     * 4 to 8 lines, alternating naturally.
 
+    Each description below is that person's own inner life, not shared knowledge.
+    Write them true to it, but they only know about each other what is listed
+    under what they know. Do not invent a shared past to explain knowing
+    something - if they have not met, they are meeting now.
+
     ---
     {{agent.summary}}
     {{other.summary}}
 
     They are at: {{location}}
+
+    What they actually know about each other:
+    {{history}}
+
     Topic: {{observation}}
 
   groupConversation: |
@@ -36,6 +45,18 @@ reactions:
     * Their history below should colour how they speak to each other - warmer and
       more familiar, or shorter and more guarded - but keep it as spoken lines.
 
+    Each person's description below is their own inner life. Write them true to
+    it - but it is not shared knowledge:
+
+    * They only know about each other what is listed under "What they actually
+      know about each other". Nothing else. Somebody's private business, their
+      history, what they do when nobody is looking - none of that is known to
+      the others unless it is written there.
+    * Do not invent a shared past to explain knowing something. If they have not
+      met, they are meeting now, and they behave like it.
+    * A person can be guarded about their own business, or hint at it, or lie
+      about it. They cannot be read like a file by somebody who just met them.
+
     ---
     People present:
     {{agent.name}}: {{agent.description}}
@@ -45,7 +66,7 @@ reactions:
 
     They are at: {{location}}
 
-    How these people know each other:
+    What they actually know about each other:
     {{history}}
 
     Topic: {{observation}}

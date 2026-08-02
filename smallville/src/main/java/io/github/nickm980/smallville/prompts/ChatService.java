@@ -274,6 +274,7 @@ public class ChatService implements Prompts {
 	    .withOther(other)
 	    .withObservation(topic)
 	    .with("location", locationOf(agent))
+	    .with("history", describeHistory(agent, List.of(other)))
 	    .setPrompt(SmallvilleConfig.getPrompts().getReactions().getConversation())
 	    .build();
 
@@ -392,7 +393,62 @@ public class ChatService implements Prompts {
 	    }
 	}
 
+	for (Agent agent : everyone) {
+	    for (Agent other : everyone) {
+		if (agent == other) {
+		    continue;
+		}
+
+		String known = whatIsKnownAbout(agent, other);
+
+		if (!known.isBlank()) {
+		    sb
+			.append(agent.getFullName())
+			.append(" has seen or been told this about ")
+			.append(other.getFullName())
+			.append(": ")
+			.append(known)
+			.append("\n");
+		}
+	    }
+	}
+
 	return sb.toString().trim();
+    }
+
+    /**
+     * What one agent has actually picked up about another, from their own
+     * memories.
+     * <p>
+     * Every conversation prompt used to list every participant's full
+     * characteristics to everybody, so an agent walked into a first meeting
+     * holding the other's secrets. It showed: in one run Paul greeted Ricky by
+     * referring to what Ricky does to people, having never met him, and the
+     * model invented a shared past - "that night at the docks" - to justify
+     * knowing it. Handed knowledge a character should not have, a model will
+     * manufacture a reason they have it.
+     * <p>
+     * People are learned, not looked up. This returns only what is in the
+     * agent's own memory stream about the other, which is what they said in
+     * earshot and what they were seen doing.
+     */
+    private static String whatIsKnownAbout(Agent agent, Agent other) {
+	String fullName = other.getFullName();
+	String firstName = fullName.split("\\s+")[0];
+
+	List<String> known = agent
+	    .getMemoryStream()
+	    .getMemories()
+	    .stream()
+	    .map(Memory::getDescription)
+	    .filter(description -> description.contains(firstName) || description.contains(fullName))
+	    .collect(Collectors.toList());
+
+	// The most recent few. All of them would swamp the prompt once agents
+	// have shared a room for a while.
+	int from = Math.max(0, known.size() - 4);
+
+	return String.join("; ", known.subList(from, known.size()));
     }
 
     /**
