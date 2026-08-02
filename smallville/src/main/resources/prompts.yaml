@@ -220,6 +220,15 @@ plans:
     * Do what YOU would be doing. Other people being nearby is not a reason to be doing
       the same thing as them.
 
+    A moment ago you were: {{agent.lastActivity}}
+
+    * Time has passed since then. If you were already doing that, you are further
+      along now, or finished, or on to the next thing - a person does not spend an
+      hour unlacing one shoe. Move it forward rather than describing the same
+      instant again.
+    * If the schedule still fits, stay with it and progress within it. Only jump to
+      something else if what is going on around you gives you a reason to.
+
     What is your activity at {{date.time}}?
 
     For example:

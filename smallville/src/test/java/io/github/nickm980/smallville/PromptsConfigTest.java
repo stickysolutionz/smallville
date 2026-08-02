@@ -92,6 +92,15 @@ public class PromptsConfigTest {
 		"reactions.conversationTone is missing {{transcript}}");
     }
 
+    @Test
+    public void the_activity_prompt_knows_what_the_agent_was_just_doing() {
+	// Without it the prompt answers "what are you doing now" from scratch
+	// every tick against an unchanged plan, and produces the same answer -
+	// one agent spent two simulated hours unlacing the same pair of shoes.
+	assertTrue(SmallvilleConfig.getPrompts().getPlans().getCurrent().contains("{{agent.lastActivity}}"),
+		"plans.current is missing {{agent.lastActivity}}");
+    }
+
     private static void assertFilled(String prompt, String name) {
 	assertNotNull(prompt, name + " is missing from prompts.yaml");
 	assertTrue(!prompt.isBlank(), name + " is empty");
