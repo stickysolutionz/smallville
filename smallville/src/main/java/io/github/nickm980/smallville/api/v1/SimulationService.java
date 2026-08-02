@@ -250,12 +250,17 @@ public class SimulationService {
 
 	Agent agent = new Agent(request.getName(), characteristics, request.getActivity(), location);
 
-	exclusively(() -> {
-	    if (world.create(agent)) {
-		String traits = prompts.createTraitsWithCharacteristics(agent);
-		agent.setTraits(traits);
-	    }
-	});
+	// No model call here on purpose. Creating an agent is a change to world
+	// state, and it should cost what that costs - the agent's trait summary
+	// is derived from the characteristics the user just typed, is used on a
+	// single line of one prompt, and is filled in by the next tick (see
+	// UpdateService.updateAgent). Blocking the request on it made adding
+	// someone to the town take tens of seconds for no reason.
+	//
+	// This also means a failed trait call no longer means a failed
+	// creation: previously the exception propagated and the agent was never
+	// added at all.
+	exclusively(() -> world.create(agent));
     }
 
     public GeneratedCharacterResponse generateCharacter() {
@@ -597,24 +602,31 @@ public class SimulationService {
 	return result;
     }
 
+    /*
+     * Characteristic edits deliberately do NOT take the simulation lock.
+     *
+     * The lock is held for a whole agent update - several sequential LLM calls,
+     * routinely 30-45 seconds - so taking it made a single list insert wait
+     * that long for no benefit. There is nothing to protect against: the tick
+     * never creates or removes Characteristics (clearDiary explicitly keeps
+     * them), the memory stream is a CopyOnWriteArrayList so add and remove are
+     * atomic, and removal is by object identity rather than by index, so a
+     * concurrent append cannot make it delete the wrong entry.
+     */
     public void addCharacteristic(String name, String description) {
-	exclusively(() -> {
-	    Agent agent = world.getAgent(name).orElseThrow(() -> new AgentNotFoundException(name));
-	    agent.getMemoryStream().add(new Characteristic(description));
-	});
+	Agent agent = world.getAgent(name).orElseThrow(() -> new AgentNotFoundException(name));
+	agent.getMemoryStream().add(new Characteristic(description));
     }
 
     public void removeCharacteristic(String name, int index) {
-	exclusively(() -> {
-	    Agent agent = world.getAgent(name).orElseThrow(() -> new AgentNotFoundException(name));
-	    List<Characteristic> characteristics = agent.getMemoryStream().getCharacteristics();
+	Agent agent = world.getAgent(name).orElseThrow(() -> new AgentNotFoundException(name));
+	List<Characteristic> characteristics = agent.getMemoryStream().getCharacteristics();
 
-	    if (index < 0 || index >= characteristics.size()) {
-		throw new SmallvilleException("Invalid characteristic index: " + index);
-	    }
+	if (index < 0 || index >= characteristics.size()) {
+	    throw new SmallvilleException("Invalid characteristic index: " + index);
+	}
 
-	    agent.getMemoryStream().remove(characteristics.get(index));
-	});
+	agent.getMemoryStream().remove(characteristics.get(index));
     }
 
     public List<MemoryResponse> getMemoriesOfAgent(String agentName) {

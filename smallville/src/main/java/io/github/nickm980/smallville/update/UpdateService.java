@@ -54,7 +54,9 @@ public class UpdateService {
 			.format(DateTimeFormatter.ofPattern(SmallvilleConfig.getConfig().getTimeFormat())));
 	
 	Location oldLocation = agent.getLocation();
-	
+
+	ensureTraits(agent);
+
 	AgentUpdate update = new UpdateMemoryWeights()
 	    .setNext(new UpdatePlans())
 	    .setNext(new UpdateCurrentActivity())
@@ -159,5 +161,33 @@ public class UpdateService {
 
     public String createTraitsWithCharacteristics(Agent agent) {
 	return chatService.createTraits(agent);
+    }
+
+    /**
+     * Fills in an agent's trait summary the first time they are updated.
+     * <p>
+     * Generating this is a model call, and doing it while creating the agent
+     * made adding someone to the town block on a network round trip for a
+     * value that only decorates one line of one prompt. Doing it here means
+     * creation is instant and the simulation catches up on its own schedule.
+     * <p>
+     * Also self-healing: an agent restored from a save written before traits
+     * existed, or one whose trait call failed previously, picks them up on the
+     * next tick rather than going without forever.
+     */
+    private void ensureTraits(Agent agent) {
+	if (agent.getTraits() != null && !agent.getTraits().isBlank()) {
+	    return;
+	}
+
+	try {
+	    agent.setTraits(createTraitsWithCharacteristics(agent));
+	    LOG.info("Generated trait summary for " + agent.getFullName());
+	} catch (Exception e) {
+	    // Not fatal - the prompt renders the traits line empty and the
+	    // characteristics below it still carry the real detail. Retried on
+	    // the next tick.
+	    LOG.warn("Could not generate traits for " + agent.getFullName() + ", will retry next tick");
+	}
     }
 }
