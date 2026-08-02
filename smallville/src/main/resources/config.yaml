@@ -12,7 +12,7 @@ cheapModel: deepseek-v4-flash
 # seen carrying several hundred tokens of it. Leave blank to send nothing and
 # accept the model's default. Set to "disabled" to try switching it off, then
 # check /usage: if reasoningTokens drops to zero it took effect.
-thinking:
+thinking: disabled
 
 # Prices per million tokens, used only to estimate cost on /usage. Update these
 # if DeepSeek's pricing changes. Note that prices double during peak hours

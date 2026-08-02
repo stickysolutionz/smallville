@@ -178,6 +178,7 @@ public class WorldSnapshot {
 	private String planType;
 	private String planLocation;
 	private boolean planAddressed;
+	private LocalDateTime planCreatedAt;
 	private boolean dialog;
 	private boolean reactable;
 
@@ -227,6 +228,14 @@ public class WorldSnapshot {
 
 	public void setPlanLocation(String planLocation) {
 	    this.planLocation = planLocation;
+	}
+
+	public LocalDateTime getPlanCreatedAt() {
+	    return planCreatedAt;
+	}
+
+	public void setPlanCreatedAt(LocalDateTime planCreatedAt) {
+	    this.planCreatedAt = planCreatedAt;
 	}
 
 	public boolean isPlanAddressed() {

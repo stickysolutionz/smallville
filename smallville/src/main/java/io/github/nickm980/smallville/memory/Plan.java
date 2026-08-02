@@ -27,6 +27,15 @@ public class Plan extends Memory implements TemporalMemory {
      * every hour forever, because nothing records having gone.
      */
     private boolean addressed;
+    /**
+     * When this plan was made, in simulated time.
+     * <p>
+     * Staleness is judged from this rather than from {@link #time}, which is
+     * the moment the plan describes. A plan made at 11:45pm for 12:15am names a
+     * time that reads as nearly a day in the past, so using it would mark the
+     * plan stale the instant it was written and regenerate it every tick.
+     */
+    private LocalDateTime createdAt = SimulationTime.now();
 
     public Plan(String description, LocalDateTime time) {
 	this(description, time, PlanType.LONG_TERM);
@@ -36,6 +45,14 @@ public class Plan extends Memory implements TemporalMemory {
 	super(description);
 	this.time = time;
 	this.type = type;
+    }
+
+    public LocalDateTime getCreatedAt() {
+	return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+	this.createdAt = createdAt;
     }
 
     public String getLocation() {
