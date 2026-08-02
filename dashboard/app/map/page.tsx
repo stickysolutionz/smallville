@@ -13,7 +13,6 @@ import CollapsibleSection from '../collapsible-section';
 import SimulationControls, { SimulationStatusBadge } from '../simulation-controls';
 import StoryPanel from './story-panel';
 import TownMap from './town-map';
-import UsagePanel from './usage-panel';
 import ConnectionBanner from '../connection-banner';
 
 export default function MapPage() {
@@ -74,7 +73,6 @@ export default function MapPage() {
       )}
 
       <StoryPanel />
-      <UsagePanel />
     </main>
   );
 }
