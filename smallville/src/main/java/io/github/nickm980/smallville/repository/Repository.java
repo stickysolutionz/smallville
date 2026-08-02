@@ -32,6 +32,10 @@ public class Repository<T> {
      * @return true if the item was successfully saved, false otherwise
      */
     public boolean save(String id, T item) {
+	if (id == null) {
+	    return false;
+	}
+
 	return data.putIfAbsent(id, new RepositoryItem<T>(item)) == null;
     }
 
@@ -57,6 +61,16 @@ public class Repository<T> {
      * @return the item associated with the given ID, or null if not found
      */
     public T getById(String id) {
+	// ConcurrentHashMap throws on a null key where HashMap returned null.
+	// Callers rely on the old behaviour: UpdateCurrentActivity looks up
+	// whatever location name the model produced, which is null whenever the
+	// model omits that line, and handles the miss immediately afterwards.
+	// Without this guard that lookup threw and cost the agent its whole
+	// tick.
+	if (id == null) {
+	    return null;
+	}
+
 	RepositoryItem<T> item = data.get(id);
 
 	if (item == null) {
@@ -73,6 +87,10 @@ public class Repository<T> {
      * @return true if an item was removed, false if no item existed with that ID
      */
     public boolean delete(String id) {
+	if (id == null) {
+	    return false;
+	}
+
 	return data.remove(id) != null;
     }
 

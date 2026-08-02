@@ -39,6 +39,17 @@ public class WorldTest {
     }
 
     @Test
+    public void looking_up_a_null_name_returns_empty_rather_than_throwing() {
+	// The repository is a ConcurrentHashMap, which throws on a null key
+	// where HashMap returned null. UpdateCurrentActivity looks up whatever
+	// location name the model produced - null whenever the model omits that
+	// line - and handles the miss on the next line, so the lookup itself
+	// must not throw or the agent loses its whole tick.
+	assertTrue(world.getLocation(null).isEmpty());
+	assertTrue(world.getAgent(null).isEmpty());
+    }
+
+    @Test
     public void test_saving_null_location_does_not_throw_error() {
 	assertThrows(Exception.class, () -> {
 	    world.setState(null, null);
