@@ -23,10 +23,18 @@ outputPricePerMillion: 0.87
 timeFormat: h:mm a
 fullTimeFormat: EEEE, MMMM d, h:mm a
 yesterdayFormat: EEEE MMMM d
-#The weighted sum of recent memories to trigger a reflection. This value
-#depends on how many memories are added each time step and should only be
-#triggered 3-5 times per simulated day
-reflectionCutoff: 50
+# The weighted sum of recent memories needed to trigger a reflection. Should
+# fire a handful of times per simulated day, not every tick.
+#
+# Measured on a real run: the sum sits around 325 median, 715 max, so the old
+# value of 50 fired on 87% of agent updates and made reflection the single
+# largest cost in the system. It reads as 50 because recency used to be broken
+# and contributed almost nothing to the sum; fixing recency raised every value
+# without anyone moving this. 600 fires on roughly 8%.
+#
+# Note the sum grows as an agent accumulates memories, so this may need raising
+# again over a very long run.
+reflectionCutoff: 600
 #Set to true if the simulation.yaml file should be used to initialize the simulation
 simulationFile: false
 # How many times ChatGPT should attempt to send a prompt before aborting

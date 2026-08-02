@@ -323,6 +323,8 @@ story:
     Do not introduce, name, or refer to any person who is not on this list. Every character in the recap must be one of these people.
 
     The current in-world date and time is: {{now}}
+    The material below covers {{span}}. Do not describe it as spanning more time
+    than that - it is a record of exactly that stretch, no longer.
     Everything below happened on or before this date and time. Do not invent an earlier scene, a different day, or a "meanwhile, earlier that week" flashback that isn't directly supported by the material below - if something isn't given below, it did not happen and must not appear.
 
     Here is what has happened so far, drawn from each resident's diary:
@@ -345,6 +347,8 @@ story:
     {{storySoFar}}
 
     The current in-world date and time is: {{now}}
+    The new material below covers {{span}}. Do not describe it as spanning more
+    time than that.
     The new material below happened on or before this date and time. Do not invent an earlier scene, a different day, or a "meanwhile, earlier" flashback that isn't directly supported by the material below - if something isn't given below or in the story so far, it did not happen and must not appear.
 
     Here is what is NEW since the story above was last updated, drawn from each resident's diary:

@@ -341,7 +341,42 @@ public class SimulationService {
     }
 
     /** Everything the story prompt needs, snapshotted in one locked read. */
-    private record StoryMaterial(String diary, String conversations, String roster) {
+    private record StoryMaterial(String diary, String conversations, String roster, String span) {
+    }
+
+    /**
+     * How much simulated time the material actually covers, in words.
+     * <p>
+     * Without it the model guesses, and guesses generously - a single
+     * simulated day came back titled "A Week at the Cottage". It is told the
+     * current date and time but never how far back the record goes.
+     */
+    private String describeSpan(LocalDateTime since) {
+	LocalDateTime now = SimulationTime.now();
+	LocalDateTime from = since.isAfter(LocalDateTime.MIN) ? since : earliestMaterialTime();
+
+	if (from == null || !from.isBefore(now)) {
+	    return "a brief moment";
+	}
+
+	long minutes = Duration.between(from, now).toMinutes();
+	String length = minutes < 90 ? minutes + " minutes"
+		: minutes < 60 * 36 ? (minutes / 60) + " hours" : (minutes / 60 / 24) + " days";
+
+	return length + ", from " + from.format(STORY_FULL_FORMAT) + " to " + now.format(STORY_FULL_FORMAT);
+    }
+
+    /** The oldest thing anybody remembers, for a first recap. */
+    private LocalDateTime earliestMaterialTime() {
+	return world
+	    .getAgents()
+	    .stream()
+	    .flatMap(agent -> agent.getMemoryStream().getMemories().stream())
+	    .filter(memory -> memory instanceof TemporalMemory)
+	    .map(memory -> ((TemporalMemory) memory).getTime())
+	    .filter(java.util.Objects::nonNull)
+	    .min(LocalDateTime::compareTo)
+	    .orElse(null);
     }
 
     private static final DateTimeFormatter STORY_DATE_FORMAT = DateTimeFormatter.ofPattern("EEEE, MMMM d");
@@ -388,7 +423,8 @@ public class SimulationService {
 	// for as long as the model takes to answer.
 	StoryMaterial material = exclusivelyGet(() -> new StoryMaterial(collectNewDiaryText(since),
 		collectNewConversationText(since),
-		world.getAgents().stream().map(Agent::getFullName).collect(Collectors.joining(", "))));
+		world.getAgents().stream().map(Agent::getFullName).collect(Collectors.joining(", ")),
+		describeSpan(since)));
 
 	String newDiaryText = material.diary();
 	String newConversationText = material.conversations();
@@ -404,6 +440,7 @@ public class SimulationService {
 	PromptBuilder builder = new PromptBuilder()
 	    .with("roster", material.roster())
 	    .with("now", SimulationTime.now().format(STORY_FULL_FORMAT))
+	    .with("span", material.span())
 	    .with("diary", newDiaryText)
 	    .with("conversations", newConversationText);
 

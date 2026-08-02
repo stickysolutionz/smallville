@@ -75,6 +75,12 @@ public class PromptsConfigTest {
 	    assertTrue(continuation.contains("{{" + key + "}}"), "story.continuation is missing {{" + key + "}}");
 	}
 
+	// Without being told the span, the model guesses generously - one
+	// simulated day came back titled "A Week at the Cottage".
+	assertTrue(continuation.contains("{{span}}"), "story.continuation is missing {{span}}");
+	assertTrue(SmallvilleConfig.getPrompts().getStory().getFirst().contains("{{span}}"),
+		"story.first is missing {{span}}");
+
 	String compact = SmallvilleConfig.getPrompts().getStory().getCompact();
 
 	assertTrue(compact.contains("{{summary}}"), "story.compact is missing {{summary}}");
