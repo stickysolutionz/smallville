@@ -17,15 +17,22 @@ public class WorldModel {
     }
 
     /**
-     * Describes the world from one agent's point of view.
+     * Describes the world from one agent's point of view: where everybody is,
+     * and nothing about what they are doing.
      * <p>
-     * Where somebody is comes from the world and is stated as fact. What they
-     * appear to be doing is their own generated account of themselves, and is
-     * phrased so it reads that way. Previously both halves were one flat
-     * sentence that the activity prompt called ground truth, so when one agent
-     * wrote "laughing at a joke with Lindsey" every other agent in the room was
-     * told, as fact, that a conversation was underway - and wrote themselves
-     * into it. One fabrication became everybody's memory.
+     * Activity text used to be included here. It had to go, twice over. First
+     * it let one agent's invention become everyone's fact - somebody wrote
+     * "laughing at a joke with Lindsey" and the others were told a conversation
+     * was underway and wrote themselves into it. Labelling it as hearsay rather
+     * than fact fixed that, but not the second problem: with nine people in one
+     * room, handing each of them the others' activity text verbatim made them
+     * copy it. An overnight run had three agents lying on the same hallway
+     * floor "breathing slowly", word for word, then all making pancakes.
+     * <p>
+     * Location alone is what this actually needs to carry. It is what lets an
+     * agent decide to go and find someone, and co-location is what the engine
+     * uses to start conversations - none of which needs a script of what the
+     * other person is up to.
      */
     public static WorldModel fromWorld(String name, World world) {
 	WorldModel result = new WorldModel();
@@ -45,12 +52,6 @@ public class WorldModel {
 		.append(agent.getFullName())
 		.append(" is at ")
 		.append(agent.getLocation().getFullPath());
-
-	    String activity = agent.getCurrentActivity();
-
-	    if (activity != null && !activity.isBlank()) {
-		description.append(" and appears to be ").append(activity);
-	    }
 	}
 
 	result.setDescription(description.toString());

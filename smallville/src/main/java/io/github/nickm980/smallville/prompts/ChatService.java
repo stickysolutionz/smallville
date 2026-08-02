@@ -254,10 +254,15 @@ public class ChatService implements Prompts {
 
 	String response = chat.sendChat(prompt.labelled("currentActivity").asCheap(), .5);
 
-	LocalNLP nlp = new LocalNLP();
 	CurrentActivity activity = Util.parseAsClass(response, CurrentActivity.class);
 	LOG.info(activity.getActivity() + activity.getLocation());
-	activity.setLastActivity(nlp.convertToPastTense(agent.getCurrentActivity()));
+
+	// Deliberately not past-tensed. convertToPastTense mangles anything it
+	// does not recognise - a live run produced "eyes closeded", "shreded
+	// cheese" and "setting the bowl aside to rested" - and it ran over every
+	// observation an agent ever formed. A memory reads perfectly well in the
+	// tense the activity was written in.
+	activity.setLastActivity(agent.getCurrentActivity());
 
 	return activity;
     }

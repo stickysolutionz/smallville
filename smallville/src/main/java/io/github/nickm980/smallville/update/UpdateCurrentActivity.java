@@ -23,6 +23,13 @@ public class UpdateCurrentActivity extends AgentUpdate {
 	CurrentActivity activity = service.getCurrentActivity(agent);
 	LOG.debug(activity.getLocation());
 
+	// The memory written at the end of this describes what the agent was
+	// doing BEFORE this update, so it belongs to where they were doing it.
+	// Reading the location afterwards attributed the previous activity to
+	// the new place: an agent walking from the Cottage to Walmart
+	// remembered making coffee at Walmart.
+	Location whereItHappened = agent.getLocation();
+
 	if (activity.getActivity() != null && !activity.getActivity().isBlank()) {
 	    agent.setCurrentActivity(activity.getActivity());
 	} else {
@@ -46,10 +53,32 @@ public class UpdateCurrentActivity extends AgentUpdate {
 		    + agent.getLocation().getFullPath());
 	}
 
-	agent.getMemoryStream().add(new Observation(recordOf(activity.getLastActivity(), agent, world)));
+	remember(agent, world, whereItHappened, activity.getLastActivity());
 	markGoalsReached(agent);
 
 	return next(service, world, agent, info);
+    }
+
+    /**
+     * Files what the agent was doing, unless it is the same thing they were
+     * already recorded doing.
+     * <p>
+     * A plan now covers several ticks on purpose, so an agent legitimately
+     * spends three or four of them on one activity. Writing a near-identical
+     * memory each time fills the stream with duplicates that then get retrieved
+     * together and crowd everything else out - an overnight run recorded "lying
+     * on the hallway floor, breathing slowly" three times in forty-five
+     * minutes.
+     */
+    private static void remember(Agent agent, World world, Location where, String activity) {
+	String record = recordOf(activity, where, world, agent);
+	String previous = agent.getMemoryStream().getLastObservation().getDescription();
+
+	if (record.equalsIgnoreCase(previous)) {
+	    return;
+	}
+
+	agent.getMemoryStream().add(new Observation(record));
     }
 
     /**
@@ -99,8 +128,8 @@ public class UpdateCurrentActivity extends AgentUpdate {
      * actually there comes from the world, so the social half of the memory is
      * something the simulation can stand behind.
      */
-    private static String recordOf(String activity, Agent agent, World world) {
-	String where = agent.getLocation() == null ? null : agent.getLocation().getFullPath();
+    private static String recordOf(String activity, Location location, World world, Agent agent) {
+	String where = location == null ? null : location.getFullPath();
 	String what = activity == null ? "" : activity.trim();
 
 	StringBuilder record = new StringBuilder(what.isEmpty() ? "Spent time" : what);
@@ -109,7 +138,7 @@ public class UpdateCurrentActivity extends AgentUpdate {
 	    record.append(what.toLowerCase().contains(where.toLowerCase()) ? "" : " at " + where);
 	}
 
-	List<String> alsoHere = othersAt(agent, world);
+	List<String> alsoHere = othersAt(agent, location, world);
 
 	if (!alsoHere.isEmpty()) {
 	    record.append(", where ").append(join(alsoHere)).append(alsoHere.size() == 1 ? " also was" : " also were");
@@ -118,12 +147,12 @@ public class UpdateCurrentActivity extends AgentUpdate {
 	return record.toString();
     }
 
-    private static List<String> othersAt(Agent agent, World world) {
-	if (agent.getLocation() == null) {
+    private static List<String> othersAt(Agent agent, Location location, World world) {
+	if (location == null) {
 	    return List.of();
 	}
 
-	String here = agent.getLocation().getFullPath();
+	String here = location.getFullPath();
 
 	return world
 	    .getAgents()

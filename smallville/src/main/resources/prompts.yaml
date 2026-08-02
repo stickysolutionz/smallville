@@ -206,9 +206,7 @@ plans:
     Schedule: {{#agent.shortPlans}}{{description}}; {{/agent.shortPlans}}
 
     * The location should always include a leaf location or object chosen from the available locations
-    * Where each other person is, above, comes from the world itself and is fact. What
-      they appear to be doing is their own account of themselves - treat it as something
-      you can see, not as something you already know the meaning of.
+    * Where each other person is, above, comes from the world itself and is fact.
     * Describe ONLY what you yourself are doing. Do not name another person in your
       activity and do not describe anything you are doing together with them - no
       talking with, laughing with, joining, replying, agreeing, arguing. Those are
@@ -216,6 +214,11 @@ plans:
       else in this world decides whether they did.
     * You can be doing something near other people, or on your way to them, or looking
       for them. You just cannot report an exchange that has already taken place.
+    * Equally, do not insist you are alone or doing something "by yourself" when other
+      people are listed above as being where you are. Say what you are doing and leave
+      the company out of it either way.
+    * Do what YOU would be doing. Other people being nearby is not a reason to be doing
+      the same thing as them.
 
     What is your activity at {{date.time}}?
 

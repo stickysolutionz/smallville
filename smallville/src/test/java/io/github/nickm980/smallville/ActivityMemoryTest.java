@@ -135,6 +135,62 @@ public class ActivityMemoryTest {
     }
 
     @Test
+    public void an_unchanged_activity_is_not_recorded_twice() {
+	// A plan now spans several ticks on purpose, so an agent genuinely
+	// spends a few of them on one thing. Writing a near-identical memory
+	// each time fills the stream with duplicates that get retrieved
+	// together and crowd everything else out.
+	World world = walmartWith("Joan");
+	Agent joan = world.getAgent("Joan").orElseThrow();
+
+	String sameAnswer = """
+		Activity: browsing the pet supplies
+		Location: Walmart
+		Emoji: 🛒
+		""";
+
+	// A memory describes the PREVIOUS activity, so the first two differ -
+	// "idle", then "browsing". Only from the third does the same activity
+	// come round again.
+	runActivityStep(world, joan, sameAnswer);
+	runActivityStep(world, joan, sameAnswer);
+	int settled = joan.getMemoryStream().getMemories().size();
+
+	runActivityStep(world, joan, sameAnswer);
+	runActivityStep(world, joan, sameAnswer);
+
+	assertEquals(settled, joan.getMemoryStream().getMemories().size(),
+		"an unchanged activity should not be remembered again");
+    }
+
+    @Test
+    public void a_memory_belongs_to_where_the_activity_happened() {
+	// The memory describes what the agent was doing BEFORE this update, so
+	// it belongs to where they were doing it. Reading the location
+	// afterwards attributed the old activity to the new place - an agent
+	// walking from the Cottage to Walmart remembered making coffee at
+	// Walmart.
+	World world = walmartWith("Joan");
+	world.create(new Location("Cottage"));
+
+	Agent joan = world.getAgent("Joan").orElseThrow();
+	joan.setLocation(world.getLocation("Cottage").orElseThrow());
+	joan.setCurrentActivity("making a pot of coffee");
+
+	runActivityStep(world, joan, """
+		Activity: browsing the pet supplies
+		Location: Walmart
+		Emoji: 🛒
+		""");
+
+	String memory = lastMemoryOf(joan);
+
+	assertTrue(memory.contains("Cottage"), "the coffee was made at the Cottage, got: " + memory);
+	assertFalse(memory.contains("Walmart"), "the coffee was not made at Walmart, got: " + memory);
+	assertEquals("Walmart", joan.getLocation().getFullPath(), "the agent should still have moved");
+    }
+
+    @Test
     public void a_daily_goal_is_marked_addressed_once_its_place_is_visited() {
 	// Without this, "pick up cat food" is restated every hour for the rest
 	// of the day because nothing records having gone to the shop.
