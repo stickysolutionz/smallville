@@ -47,7 +47,11 @@ function setOnline(next: boolean) {
  */
 async function trackedFetch(input: string, init?: RequestInit): Promise<Response> {
   try {
-    const response = await trackedFetch(input, init);
+    // globalThis.fetch, not bare fetch: every other call in this file was
+    // rewritten from `fetch(` to `trackedFetch(` by a find and replace that
+    // also caught this line, turning the wrapper into infinite recursion.
+    // Qualifying it makes that substitution impossible to repeat.
+    const response = await globalThis.fetch(input, init);
     setOnline(true);
     return response;
   } catch (error) {
@@ -75,7 +79,7 @@ export async function getAgents() {
 
     return result
   } catch (error) {
-    return failed('Error fetching agents data:', error, []);
+    return failed('fetching agents data', error, []);
   }
 }
 
@@ -99,7 +103,7 @@ export async function getInfo() {
 
     return result
   } catch (error) {
-    return failed('Error fetching agents data', error, []);
+    return failed('fetching agents data', error, []);
   }
 }
 
@@ -115,7 +119,7 @@ export async function getAllLocations() {
     console.log("fetching new data")
     return result.locations
   } catch (error) {
-    return failed('Error fetching locations data', error, []);
+    return failed('fetching locations data', error, []);
   }
 }
 
@@ -142,7 +146,7 @@ export async function interview(agent: string, question: string) {
 
     return result
   } catch (error) {
-    return failed('Error interviewing agent', error, []);
+    return failed('interviewing agent', error, []);
   }
 }
 
@@ -155,7 +159,7 @@ export async function deleteAgent(name: string) {
 
     return await response.json();
   } catch (error) {
-    return failed('Error deleting agent', error, { success: false });
+    return failed('deleting agent', error, { success: false });
   }
 }
 
@@ -171,7 +175,7 @@ export async function deleteLocation(name: string) {
 
     return await response.json();
   } catch (error) {
-    return failed('Error deleting location', error, { success: false });
+    return failed('deleting location', error, { success: false });
   }
 }
 
@@ -194,7 +198,7 @@ export async function getCharacteristics(name: string): Promise<Characteristic[]
     const result = await response.json();
     return result.characteristics;
   } catch (error) {
-    return failed('Error fetching characteristics', error, []);
+    return failed('fetching characteristics', error, []);
   }
 }
 
@@ -215,7 +219,7 @@ export async function addCharacteristic(name: string, description: string) {
 
     return await response.json();
   } catch (error) {
-    return failed('Error adding characteristic', error, { success: false });
+    return failed('adding characteristic', error, { success: false });
   }
 }
 
@@ -228,7 +232,7 @@ export async function removeCharacteristic(name: string, index: number) {
 
     return await response.json();
   } catch (error) {
-    return failed('Error removing characteristic', error, { success: false });
+    return failed('removing characteristic', error, { success: false });
   }
 }
 
@@ -250,7 +254,7 @@ export async function createLocation(name: string) {
 
     return await response.json();
   } catch (error) {
-    return failed('Error creating location', error, { success: false });
+    return failed('creating location', error, { success: false });
   }
 }
 
@@ -278,7 +282,7 @@ export async function getAllConversations(): Promise<ConversationGroup[]> {
     const result = await response.json();
     return result.conversations;
   } catch (error) {
-    return failed('Error fetching conversations', error, []);
+    return failed('fetching conversations', error, []);
   }
 }
 
@@ -303,7 +307,7 @@ export async function getDiary(name: string): Promise<DiaryEntry[]> {
     const result = await response.json();
     return result.diary;
   } catch (error) {
-    return failed('Error fetching diary', error, []);
+    return failed('fetching diary', error, []);
   }
 }
 
@@ -329,7 +333,7 @@ export async function generateCharacter(): Promise<GeneratedCharacter | null> {
 
     return await response.json();
   } catch (error) {
-    return failed('Error generating character', error, null);
+    return failed('generating character', error, null);
   }
 }
 
@@ -356,7 +360,7 @@ export async function createAgent(
 
     return await response.json();
   } catch (error) {
-    return failed('Error creating agent', error, { success: false });
+    return failed('creating agent', error, { success: false });
   }
 }
 
@@ -392,7 +396,7 @@ export async function getSimulationStatus(): Promise<SimulationStatus> {
 
     return await response.json();
   } catch (error) {
-    return failed('Error fetching simulation status', error, fallback);
+    return failed('fetching simulation status', error, fallback);
   }
 }
 
@@ -410,7 +414,7 @@ export async function startSimulation(intervalSeconds: number) {
 
     return await response.json();
   } catch (error) {
-    return failed('Error starting simulation', error, { success: false });
+    return failed('starting simulation', error, { success: false });
   }
 }
 
@@ -423,7 +427,7 @@ export async function stopSimulation() {
 
     return await response.json();
   } catch (error) {
-    return failed('Error stopping simulation', error, { success: false });
+    return failed('stopping simulation', error, { success: false });
   }
 }
 
@@ -438,7 +442,7 @@ export async function setTimestep(minutes: number) {
 
     return await response.json();
   } catch (error) {
-    return failed('Error setting timestep', error, { success: false });
+    return failed('setting timestep', error, { success: false });
   }
 }
 
@@ -451,7 +455,7 @@ export async function resetSimulation() {
 
     return await response.json();
   } catch (error) {
-    return failed('Error resetting simulation', error, { success: false });
+    return failed('resetting simulation', error, { success: false });
   }
 }
 
@@ -478,7 +482,7 @@ export async function updateLocation(name: string, state: string) {
 
     return result
   } catch (error) {
-    return failed('Error updating location', error, []);
+    return failed('updating location', error, []);
   }
 }
 
@@ -504,7 +508,7 @@ export async function getStory(): Promise<StoryState> {
 
     return await response.json();
   } catch (error) {
-    return failed('Error fetching story', error, { story: '', exists: false, asOfDate: null, asOfTime: null });
+    return failed('fetching story', error, { story: '', exists: false, asOfDate: null, asOfTime: null });
   }
 }
 
@@ -521,7 +525,7 @@ export async function generateStory(): Promise<StoryState | null> {
 
     return await response.json();
   } catch (error) {
-    return failed('Error generating story', error, null);
+    return failed('generating story', error, null);
   }
 }
 
@@ -551,7 +555,7 @@ export async function uploadLocationImage(
 
     return await response.json();
   } catch (error) {
-    return failed('Error uploading location image', error, { success: false, message: 'Upload failed' });
+    return failed('uploading location image', error, { success: false, message: 'Upload failed' });
   }
 }
 export interface PromptUsage {
@@ -579,7 +583,7 @@ export async function getUsage(): Promise<UsageReport | null> {
 
     return await response.json();
   } catch (error) {
-    return failed('Error fetching usage', error, null);
+    return failed('fetching usage', error, null);
   }
 }
 
@@ -592,6 +596,6 @@ export async function resetUsage() {
 
     return await response.json();
   } catch (error) {
-    return failed('Error resetting usage', error, { success: false });
+    return failed('resetting usage', error, { success: false });
   }
 }
