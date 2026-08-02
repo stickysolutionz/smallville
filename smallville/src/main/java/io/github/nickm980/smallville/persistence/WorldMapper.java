@@ -111,6 +111,8 @@ public final class WorldMapper {
 	    stored.setType("Plan");
 	    stored.setTime(plan.getTime());
 	    stored.setPlanType(plan.getType() == null ? null : plan.getType().name());
+	    stored.setPlanLocation(plan.getLocation());
+	    stored.setPlanAddressed(plan.isAddressed());
 	} else if (memory instanceof Observation observation) {
 	    stored.setType("Observation");
 	    stored.setTime(observation.getTime());
@@ -243,7 +245,11 @@ public final class WorldMapper {
 		}
 	    }
 
-	    return new Plan(description, time, type);
+	    Plan plan = new Plan(description, time, type);
+	    plan.setLocation(stored.getPlanLocation());
+	    plan.setAddressed(stored.isPlanAddressed());
+
+	    return plan;
 	case "Observation":
 	    Observation observation = new Observation(description, time, stored.getImportance());
 	    observation.setDialog(stored.isDialog());

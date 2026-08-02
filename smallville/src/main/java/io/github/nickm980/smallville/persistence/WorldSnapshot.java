@@ -176,6 +176,8 @@ public class WorldSnapshot {
 	private int importance;
 	private LocalDateTime time;
 	private String planType;
+	private String planLocation;
+	private boolean planAddressed;
 	private boolean dialog;
 	private boolean reactable;
 
@@ -217,6 +219,22 @@ public class WorldSnapshot {
 
 	public void setPlanType(String planType) {
 	    this.planType = planType;
+	}
+
+	public String getPlanLocation() {
+	    return planLocation;
+	}
+
+	public void setPlanLocation(String planLocation) {
+	    this.planLocation = planLocation;
+	}
+
+	public boolean isPlanAddressed() {
+	    return planAddressed;
+	}
+
+	public void setPlanAddressed(boolean planAddressed) {
+	    this.planAddressed = planAddressed;
 	}
 
 	public boolean isDialog() {

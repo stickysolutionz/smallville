@@ -9,6 +9,8 @@ import io.github.nickm980.smallville.World;
 import io.github.nickm980.smallville.entities.Agent;
 import io.github.nickm980.smallville.entities.Location;
 import io.github.nickm980.smallville.memory.Observation;
+import io.github.nickm980.smallville.memory.Plan;
+import io.github.nickm980.smallville.memory.PlanType;
 import io.github.nickm980.smallville.prompts.Prompts;
 import io.github.nickm980.smallville.prompts.dto.CurrentActivity;
 
@@ -45,8 +47,41 @@ public class UpdateCurrentActivity extends AgentUpdate {
 	}
 
 	agent.getMemoryStream().add(new Observation(recordOf(activity.getLastActivity(), agent, world)));
+	markGoalsReached(agent);
 
 	return next(service, world, agent, info);
+    }
+
+    /**
+     * Marks any daily goal whose location the agent is now standing in as
+     * addressed.
+     * <p>
+     * Deliberately crude - being somewhere is not the same as having done the
+     * thing. But without any notion of a goal being met, "pick up cat food"
+     * is restated every hour for the rest of the day, because nothing records
+     * having gone to the shop.
+     */
+    private static void markGoalsReached(Agent agent) {
+	if (agent.getLocation() == null) {
+	    return;
+	}
+
+	String here = agent.getLocation().getFullPath();
+
+	for (Plan plan : agent.getMemoryStream().getPlans(PlanType.LONG_TERM)) {
+	    if (plan.isAddressed() || plan.getLocation() == null) {
+		continue;
+	    }
+
+	    // Goals name a location which may be more or less specific than
+	    // where the agent ended up, so either containing the other counts.
+	    String there = plan.getLocation();
+
+	    if (here.equalsIgnoreCase(there) || here.toLowerCase().startsWith(there.toLowerCase())
+		    || there.toLowerCase().startsWith(here.toLowerCase())) {
+		plan.setAddressed(true);
+	    }
+	}
     }
 
     /**

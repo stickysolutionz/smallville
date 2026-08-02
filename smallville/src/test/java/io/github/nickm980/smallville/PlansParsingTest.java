@@ -7,10 +7,15 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
+import io.github.nickm980.smallville.entities.Agent;
+import io.github.nickm980.smallville.entities.Location;
 import io.github.nickm980.smallville.entities.SimulationTime;
 import io.github.nickm980.smallville.llm.ChatGPT;
+import io.github.nickm980.smallville.llm.LLM;
+import io.github.nickm980.smallville.memory.Characteristic;
 import io.github.nickm980.smallville.memory.Plan;
 import io.github.nickm980.smallville.prompts.ChatService;
+import io.github.nickm980.smallville.prompts.PromptRequest;
 
 public class PlansParsingTest {
 
@@ -116,6 +121,43 @@ public class PlansParsingTest {
 	} finally {
 	    SimulationTime.setSimulationTime(restore);
 	}
+    }
+
+    @Test
+    public void a_daily_goal_uses_a_time_of_day_rather_than_a_clock_time() {
+	// Daily plans are intentions now - "morning", not "9:00 am" - but Plan
+	// is a TemporalMemory and everything that orders plans needs an instant,
+	// so a time of day maps onto a representative hour. The location is kept
+	// separately so the simulation can tell whether the agent has been.
+	World world = new World();
+	Location market = new Location("Market: Stalls");
+	world.create(market);
+	world.create(new Location("The Tavern"));
+
+	Agent shopkeeper = new Agent("Maria Lopez", List.of(new Characteristic("Maria runs the market stall")), "idle",
+		market);
+	world.create(shopkeeper);
+
+	ChatService service = new ChatService(world, new LLM() {
+	    @Override
+	    public String sendChat(PromptRequest prompt, double temperature) {
+		return """
+			{"plans": [
+			  {"when": "morning", "location": "Market: Stalls", "intent": "open up and get through the deliveries"},
+			  {"when": "evening", "location": "The Tavern", "intent": "unwind, and see who is about"}
+			]}
+			""";
+	    }
+	});
+
+	List<Plan> plans = service.getPlans(shopkeeper);
+
+	assertEquals(2, plans.size());
+	assertEquals(9, plans.get(0).getTime().getHour(), "morning should map to a morning hour");
+	assertEquals(19, plans.get(1).getTime().getHour(), "evening should map to an evening hour");
+	assertEquals("Market: Stalls", plans.get(0).getLocation());
+	assertTrue(plans.get(0).getDescription().contains("deliveries"), plans.get(0).getDescription());
+	assertFalse(plans.get(0).isAddressed(), "a fresh goal starts outstanding");
     }
 
     @Test

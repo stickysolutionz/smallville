@@ -29,6 +29,7 @@ import io.github.nickm980.smallville.entities.SimulationTime;
 import io.github.nickm980.smallville.llm.LLM;
 import io.github.nickm980.smallville.memory.Memory;
 import io.github.nickm980.smallville.memory.Plan;
+import io.github.nickm980.smallville.memory.PlanType;
 import io.github.nickm980.smallville.memory.Reflection;
 import io.github.nickm980.smallville.nlp.LocalNLP;
 import io.github.nickm980.smallville.prompts.dto.CurrentActivity;
@@ -122,6 +123,7 @@ public class ChatService implements Prompts {
 	    .withObservation(agent.getMemoryStream().getLastObservation().getDescription())
 	    .withAgent(agent)
 	    .withWorld(world)
+	    .with("outstandingGoals", describeOutstandingGoals(agent))
 	    .setPrompt(SmallvilleConfig.getPrompts().getPlans().getShortTerm())
 	    .build();
 
@@ -157,12 +159,19 @@ public class ChatService implements Prompts {
 	    }
 
 	    for (JsonNode entry : entries) {
-		String time = entry.path("time").asText("").trim();
+		// Hourly plans carry a clock "time" and an "activity"; daily
+		// goals carry a "when" time of day and an "intent". Same shape
+		// otherwise, so one reader handles both.
+		String time = firstNonBlank(entry, "time", "when");
 		String location = entry.path("location").asText("").trim();
-		String activity = entry.path("activity").asText("").trim();
+		String what = firstNonBlank(entry, "activity", "intent");
 		LocalDateTime start = parseTime(time);
 
-		if (start == null || activity.isEmpty()) {
+		if (start == null) {
+		    start = startOfTimeOfDay(time);
+		}
+
+		if (start == null || what.isEmpty()) {
 		    LOG.warn("[Plans] Skipping entry with no usable time or activity: " + entry);
 		    continue;
 		}
@@ -170,16 +179,68 @@ public class ChatService implements Prompts {
 		// Rebuilt into the same one-line shape the rest of the prompts
 		// show as examples, so downstream prompts see a consistent
 		// format regardless of which parse path produced the plan.
-		String description = location.isEmpty() ? time + ", " + activity
-			: time + " at " + location + ", " + activity;
+		String description = location.isEmpty() ? time + ", " + what : time + " at " + location + ", " + what;
 
-		plans.add(new Plan(description, start));
+		Plan plan = new Plan(description, start);
+		plan.setLocation(location.isEmpty() ? null : location);
+		plans.add(plan);
 	    }
 	} catch (Exception e) {
 	    LOG.warn("[Plans] Response was not valid JSON: " + e.getMessage());
 	}
 
 	return plans;
+    }
+
+    /**
+     * The day's goals the agent has not yet been to the place for, so the hourly
+     * planner knows what is still hanging over them.
+     */
+    private static String describeOutstandingGoals(Agent agent) {
+	String outstanding = agent
+	    .getMemoryStream()
+	    .getPlans(PlanType.LONG_TERM)
+	    .stream()
+	    .filter(plan -> !plan.isAddressed())
+	    .map(Plan::getDescription)
+	    .collect(Collectors.joining("; "));
+
+	return outstanding.isBlank() ? "nothing in particular" : outstanding;
+    }
+
+    private static String firstNonBlank(JsonNode entry, String... fields) {
+	for (String field : fields) {
+	    String value = entry.path(field).asText("").trim();
+
+	    if (!value.isEmpty()) {
+		return value;
+	    }
+	}
+
+	return "";
+    }
+
+    /**
+     * Daily goals say "morning" rather than a clock time, but Plan is a
+     * TemporalMemory and everything that orders plans needs an instant. Maps a
+     * time of day onto a representative hour of the simulated day.
+     */
+    private static LocalDateTime startOfTimeOfDay(String when) {
+	if (when == null) {
+	    return null;
+	}
+
+	Integer hour = switch (when.toLowerCase().trim()) {
+	case "early morning" -> 6;
+	case "morning" -> 9;
+	case "midday", "noon" -> 12;
+	case "afternoon" -> 15;
+	case "evening" -> 19;
+	case "night", "late night" -> 22;
+	default -> null;
+	};
+
+	return hour == null ? null : LocalDateTime.of(SimulationTime.now().toLocalDate(), LocalTime.of(hour, 0));
     }
 
     @Override

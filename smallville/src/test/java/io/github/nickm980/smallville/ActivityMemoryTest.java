@@ -12,7 +12,10 @@ import io.github.nickm980.smallville.entities.Agent;
 import io.github.nickm980.smallville.entities.Location;
 import io.github.nickm980.smallville.llm.LLM;
 import io.github.nickm980.smallville.memory.Characteristic;
+import io.github.nickm980.smallville.entities.SimulationTime;
 import io.github.nickm980.smallville.memory.Memory;
+import io.github.nickm980.smallville.memory.Plan;
+import io.github.nickm980.smallville.memory.PlanType;
 import io.github.nickm980.smallville.prompts.PromptRequest;
 import io.github.nickm980.smallville.prompts.Prompts;
 import io.github.nickm980.smallville.update.UpdateCurrentActivity;
@@ -129,6 +132,31 @@ public class ActivityMemoryTest {
 
 	assertTrue(memory.contains("Walmart"), memory);
 	assertTrue(memory.contains("Paul"), memory);
+    }
+
+    @Test
+    public void a_daily_goal_is_marked_addressed_once_its_place_is_visited() {
+	// Without this, "pick up cat food" is restated every hour for the rest
+	// of the day because nothing records having gone to the shop.
+	World world = walmartWith("Joan");
+	Agent joan = world.getAgent("Joan").orElseThrow();
+
+	Plan errand = new Plan("afternoon at Walmart, pick up cat food", SimulationTime.now(), PlanType.LONG_TERM);
+	errand.setLocation("Walmart");
+
+	Plan elsewhere = new Plan("evening at The Tavern, unwind", SimulationTime.now(), PlanType.LONG_TERM);
+	elsewhere.setLocation("The Tavern");
+
+	joan.getMemoryStream().addAll(List.of(errand, elsewhere));
+
+	runActivityStep(world, joan, """
+		Activity: browsing the pet supplies
+		Location: Walmart
+		Emoji: 🛒
+		""");
+
+	assertTrue(errand.isAddressed(), "the Walmart errand should be marked addressed");
+	assertFalse(elsewhere.isAddressed(), "a goal somewhere else must stay outstanding");
     }
 
     @Test

@@ -117,28 +117,38 @@ plans:
   # Invariant instructions first, volatile state last - see the note on
   # longTerm below for why the ordering matters.
   shortTerm: |
-    You are breaking down one resident's next hour in a small town simulation.
+    You are deciding what one resident of a small town is setting out to do next.
 
     Respond with only a json object, in exactly this shape:
-    {"plans": [{"time": "9:00 am", "location": "Red House: Kitchen", "activity": "make a pot of coffee"}]}
+    {"plans": [{"time": "9:00 am", "location": "Red House: Kitchen", "activity": "making coffee and waking up properly"}]}
 
     * "time" must be a clock time like "9:00 am".
     * "location" must be one of the available locations, written exactly as given below.
-    * "activity" is what the resident is doing there, in a few words.
-    * Give 3 to 5 entries covering the next hour, in order, at roughly
-      15 minute intervals - not a single entry for the whole hour.
+    * "activity" is what they are settling into doing there.
+    * One or two entries for the next hour. Not a minute-by-minute breakdown -
+      an hour of someone's life is usually one or two things, and the rest is
+      the detail of living them.
+
+    This is an intention, not a script of what happens:
+
+    * No outcomes. "Look for the cat food" - not "find the cat food and pay for it".
+    * No reactions. Nobody can intend to laugh at a joke, reply to someone, agree,
+      argue, or join a conversation. Those need something to have happened first.
+    * No other people doing things with them. "Head over to the tavern where Bill
+      usually is" is fine. "Chat with Bill" is not - it assumes Bill is willing.
 
     ---
     Everything below is specific to right now and to this resident.
 
     {{world.description}}
     {{agent.summary}}
-    Daily Requirement: {{#agent.plans}}{{description}};{{/agent.plans}}
+    What they want out of today: {{#agent.plans}}{{description}}; {{/agent.plans}}
+    Still outstanding: {{outstandingGoals}}
     Relevant Memories: {{#memories.relevant}}{{description}}; {{/memories.relevant}}
     Observation: {{observation}}
 
-    The current time is {{date.time}}. Break down {{agent.name}}'s plan for the
-    next hour starting now.
+    It is {{date.time}}. Given where {{agent.name}} is and what is going on around
+    them right now, what are they setting out to do next?
 
   # Everything invariant is deliberately FIRST and everything that changes per
   # agent and per tick is LAST. DeepSeek's context cache matches on prefixes,
@@ -147,44 +157,39 @@ plans:
   # tokens of examples below could never be reused between calls, because the
   # prefix differed every time.
   longTerm: |
-    You are writing one resident's plan for the day in a small town simulation.
+    You are writing what one resident of a small town means to get out of today.
 
-    A plan is what someone intends before the day happens. It says where they
-    mean to be and what they mean to do there - not how any of it turns out.
-
-    Rules:
-    * Only use the available locations given below.
-    * Include the time the resident wakes up and falls asleep.
-    * 5-8 entries covering the big chunks of the day: waking up, a couple of main activities, meals, sleep.
-
-    This is the shape of a good plan. Note that it is ordinary, and that every
-    entry stops at the intention:
-
-    8:00 am at the Oak Hill College Dorm: Klaus Mueller's room: bed, wake up and get ready for school;
-    9:00 am at the Oak Hill College Dorm: Klaus Mueller's room: desk, read and take notes for research paper;
-    12:00 pm at the Hobbs Cafe, have lunch;
-    2:00 pm at the Oak Hill College: Library, keep working on the paper;
-    6:00 pm at the Oak Hill College Dorm: Kitchen, make dinner;
-    10:00 pm at the Oak Hill College Dorm: Klaus Mueller's room: bed, go to sleep
-
-    Another good one, for a different sort of person:
-
-    5:30 am at the Farm: Barn, wake up and start the morning milking;
-    8:00 am at the Farm: Kitchen, have breakfast;
-    9:30 am at the Market: Stalls, sell the week's eggs;
-    1:00 pm at the Farm: Fields, mend the south fence;
-    7:00 pm at the Tavern, have a drink and see who is about;
-    10:30 pm at the Farm: Bedroom, go to sleep
-
-    These would be bad plans, because they write the day's events in advance
-    instead of stating intentions:
-
-    9:00 am at the Market, notice a watch is missing and realise it was stolen;
-    11:00 am at the Police Station, file a report about the theft;
-    2:00 pm at the Cafe, get sidetracked by an argument and end up leaving early
+    These are intentions, not a schedule. A person wakes up wanting a handful of
+    things - to work, to pick up something they need, to see somebody, to let
+    loose. They do not wake up knowing what will happen.
 
     Respond with only a json object, in exactly this shape:
-    {"plans": [{"time": "8:00 am", "location": "Red House: Bedroom", "activity": "wake up and get dressed"}]}
+    {"plans": [{"when": "morning", "location": "Red House: Kitchen", "intent": "open the shop and get through the deliveries"}]}
+
+    * "when" is one of: early morning, morning, midday, afternoon, evening, night.
+    * "location" must be one of the available locations, written exactly as given
+      below. Where someone means to be is what makes them run into other people.
+    * "intent" is what they want out of it, in a few words.
+    * 4 to 6 of them, in the order they would come up. Include sleeping.
+
+    Write only what the resident wants. Never write what happens:
+
+    * No outcomes. Not "sell the eggs and make a good profit" - just "sell the eggs".
+    * No reactions. Nobody can intend to laugh at a joke, reply to someone, agree,
+      argue, or join a conversation. Those need something to have happened first.
+    * No other people doing things with them. "Go to the tavern hoping to see
+      Bill" is a want. "Have a drink with Bill" assumes Bill turns up.
+
+    A good one, for a shopkeeper:
+
+    {"plans": [
+      {"when": "early morning", "location": "Red House: Bedroom", "intent": "wake up slowly, not looking forward to the day"},
+      {"when": "morning", "location": "Market: Stalls", "intent": "open up and get through the deliveries"},
+      {"when": "midday", "location": "Hobbs Cafe", "intent": "get lunch and a break from the counter"},
+      {"when": "afternoon", "location": "Market: Stalls", "intent": "back to the shop, hoping it is quieter"},
+      {"when": "evening", "location": "The Tavern", "intent": "unwind, and see who is about"},
+      {"when": "night", "location": "Red House: Bedroom", "intent": "sleep"}
+    ]}
 
     ---
     Everything below is specific to today and to this resident.
@@ -194,8 +199,7 @@ plans:
     Relevant Memories: {{#memories.relevant}}{{description}}; {{/memories.relevant}}
     Observation ({{date.time}}): {{observation}}
 
-    It is currently {{date.full}}. Write {{agent.name}}'s plan for today in
-    broad strokes.
+    It is currently {{date.full}}. What does {{agent.name}} want out of today?
 
   current: |
     {{world.description}}
