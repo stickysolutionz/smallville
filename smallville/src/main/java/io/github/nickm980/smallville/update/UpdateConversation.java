@@ -48,6 +48,15 @@ public class UpdateConversation extends AgentUpdate {
 
 	Conversation conversation = converter.getConversationIfExists(agent, other, observation);
 
+	if (conversation.size() == 0) {
+	    // Same failure the group path guards against: no dialogue parsed out
+	    // of the response, so there is nothing to record. Skipping beats
+	    // letting World's empty-conversation error escape the tick.
+	    LOG.warn("[Conversation] No dialogue came back for " + agent.getFullName() + " and "
+		    + other.getFullName() + ", skipping");
+	    return false;
+	}
+
 	// Per participant, not shared - see the matching comment in
 	// UpdateService.triggerGroupConversation.
 	for (Agent participant : List.of(agent, other)) {

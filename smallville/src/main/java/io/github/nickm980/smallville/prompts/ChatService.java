@@ -207,22 +207,64 @@ public class ChatService implements Prompts {
 	    .withAgent(agent)
 	    .withOther(other)
 	    .withObservation(topic)
+	    .with("location", locationOf(agent))
 	    .setPrompt(SmallvilleConfig.getPrompts().getReactions().getConversation())
 	    .build();
 
-	String response = chat.sendChat(prompt.labelled("conversationPair"), .7);
-	String[] lines = response.split("\\r?\\n");
+	String response = chat.sendChat(prompt.labelled("conversationPair").asJsonResponse(), .7);
 
+	return new Conversation(List.of(agent.getFullName(), other.getFullName()), parseDialog(response));
+    }
+
+    private static String locationOf(Agent agent) {
+	return agent.getLocation() == null ? "somewhere in town" : agent.getLocation().getFullPath();
+    }
+
+    /**
+     * Reads the {@code {"lines": [{"speaker","text"}]}} shape both conversation
+     * prompts ask for, falling back to the older {@code Name: message} line
+     * format if the model ignores it.
+     * <p>
+     * The line format alone was not survivable: asked for dialogue, the model
+     * would sometimes answer with a narrative scene instead, with the speech
+     * embedded in prose. That parsed to zero lines and the entire conversation
+     * was discarded after the call had already been paid for.
+     */
+    private List<Dialog> parseDialog(String response) {
 	List<Dialog> dialogs = new ArrayList<>();
-	for (String line : lines) {
+
+	try {
+	    JsonNode lines = new ObjectMapper().readTree(Util.stripCodeFence(response)).path("lines");
+
+	    if (lines.isArray()) {
+		for (JsonNode line : lines) {
+		    String speaker = line.path("speaker").asText("").trim();
+		    String text = line.path("text").asText("").trim();
+
+		    if (!speaker.isEmpty() && !text.isEmpty()) {
+			dialogs.add(new Dialog(speaker, text));
+		    }
+		}
+	    }
+	} catch (Exception e) {
+	    LOG.warn("[Conversation] Response was not valid JSON: " + e.getMessage());
+	}
+
+	if (!dialogs.isEmpty()) {
+	    return dialogs;
+	}
+
+	LOG.warn("[Conversation] Could not read dialogue as JSON, falling back to line parsing");
+
+	for (String line : response.split("\\r?\\n")) {
 	    String[] parts = line.split(":\\s+", 2);
-	    if (parts.length == 2) { // ignores all lines before the conversation
-		dialogs.add(new Dialog(parts[0], parts[1]));
+
+	    if (parts.length == 2) { // ignores anything before the conversation
+		dialogs.add(new Dialog(parts[0].trim(), parts[1].trim()));
 	    }
 	}
 
-	Conversation conversation = new Conversation(List.of(agent.getFullName(), other.getFullName()), dialogs);
-	return conversation;
+	return dialogs;
     }
 
     @Override
@@ -232,19 +274,12 @@ public class ChatService implements Prompts {
 	    .withOthers(others)
 	    .withObservation(topic)
 	    .with("history", describeHistory(initiator, others))
+	    .with("location", locationOf(initiator))
 	    .setPrompt(SmallvilleConfig.getPrompts().getReactions().getGroupConversation())
 	    .build();
 
-	String response = chat.sendChat(prompt.labelled("conversationGroup"), .7);
-	String[] lines = response.split("\\r?\\n");
-
-	List<Dialog> dialogs = new ArrayList<>();
-	for (String line : lines) {
-	    String[] parts = line.split(":\\s+", 2);
-	    if (parts.length == 2) { // ignores all lines before the conversation
-		dialogs.add(new Dialog(parts[0], parts[1]));
-	    }
-	}
+	String response = chat.sendChat(prompt.labelled("conversationGroup").asJsonResponse(), .7);
+	List<Dialog> dialogs = parseDialog(response);
 
 	List<String> participantNames = new ArrayList<>();
 	participantNames.add(initiator.getFullName());

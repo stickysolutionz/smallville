@@ -52,6 +52,19 @@ public class PromptsConfigTest {
 	assertMentionsJson(prompts.getPlans().getShortTerm(), "plans.shortTerm");
 	assertMentionsJson(prompts.getPlans().getLongTerm(), "plans.longTerm");
 	assertMentionsJson(prompts.getStory().getGenerateCharacter(), "story.generateCharacter");
+	assertMentionsJson(prompts.getReactions().getConversation(), "reactions.conversation");
+	assertMentionsJson(prompts.getReactions().getGroupConversation(), "reactions.groupConversation");
+    }
+
+    @Test
+    public void conversation_prompts_are_told_where_the_conversation_happens() {
+	// Without this the model invents a setting. Four agents standing in a
+	// Walmart were once given a church basement and a neighbourhood safety
+	// forum, because nothing in the prompt said otherwise.
+	assertTrue(SmallvilleConfig.getPrompts().getReactions().getConversation().contains("{{location}}"),
+		"reactions.conversation is missing {{location}}");
+	assertTrue(SmallvilleConfig.getPrompts().getReactions().getGroupConversation().contains("{{location}}"),
+		"reactions.groupConversation is missing {{location}}");
     }
 
     @Test

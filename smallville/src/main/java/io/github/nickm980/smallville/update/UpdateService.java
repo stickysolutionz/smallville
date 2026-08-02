@@ -105,6 +105,21 @@ public class UpdateService {
 
 	Conversation conversation = chatService.getGroupConversation(initiator, others, topic);
 
+	if (conversation.size() == 0) {
+	    // One retry, then give up quietly. This used to propagate World's
+	    // "Cannot have an empty conversation" out of the tick, which logged
+	    // a stack trace and threw away a call that had already been paid
+	    // for. Nothing is broken when it happens - the group simply doesn't
+	    // talk this time.
+	    LOG.warn("No dialogue came back for the group at " + initiator.getLocation().getFullPath() + ", retrying");
+	    conversation = chatService.getGroupConversation(initiator, others, topic);
+	}
+
+	if (conversation.size() == 0) {
+	    LOG.warn("Still no dialogue on retry, skipping this conversation");
+	    return;
+	}
+
 	// Built per participant rather than once and shared. Beyond needing each
 	// agent's own point of view, the memories must be distinct objects:
 	// UpdateMemoryWeights calls setImportance on them, so sharing instances
