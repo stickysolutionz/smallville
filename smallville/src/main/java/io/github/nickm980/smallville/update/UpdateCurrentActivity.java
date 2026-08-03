@@ -133,6 +133,13 @@ public class UpdateCurrentActivity extends AgentUpdate {
 	String where = location == null ? null : location.getFullPath();
 	String what = activity == null ? "" : activity.trim();
 
+	// "idle" is the placeholder an agent starts with, not something they
+	// did. Left in, it reached the story - a recap opened with four
+	// residents "idle through the early hours".
+	if (what.equalsIgnoreCase("idle")) {
+	    what = "";
+	}
+
 	StringBuilder record = new StringBuilder(what.isEmpty() ? "Spent time" : what);
 
 	if (where != null) {

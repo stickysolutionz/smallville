@@ -193,6 +193,26 @@ public class ChatService implements Prompts {
     }
 
     /**
+     * How long, in simulated minutes, the agent has been working from their
+     * current hourly plan.
+     * <p>
+     * Gives the activity step a sense of elapsed time. Without it every tick
+     * looks like the beginning of the intention, so an agent starts the same
+     * thing over rather than finishing it.
+     */
+    private static long minutesOnCurrentPlan(Agent agent) {
+	return agent
+	    .getMemoryStream()
+	    .getPlans(PlanType.SHORT_TERM)
+	    .stream()
+	    .map(Plan::getCreatedAt)
+	    .filter(java.util.Objects::nonNull)
+	    .max(LocalDateTime::compareTo)
+	    .map(madeAt -> Math.max(0, java.time.Duration.between(madeAt, SimulationTime.now()).toMinutes()))
+	    .orElse(0L);
+    }
+
+    /**
      * The day's goals the agent has not yet been to the place for, so the hourly
      * planner knows what is still hanging over them.
      */
@@ -249,6 +269,7 @@ public class ChatService implements Prompts {
 	    .withAgent(agent)
 	    .withWorld(world)
 	    .withLocations(world.getLocations())
+	    .with("minutesOnThis", minutesOnCurrentPlan(agent))
 	    .setPrompt(SmallvilleConfig.getPrompts().getPlans().getCurrent())
 	    .build();
 

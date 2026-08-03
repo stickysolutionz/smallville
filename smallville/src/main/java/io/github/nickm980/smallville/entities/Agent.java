@@ -33,6 +33,11 @@ public class Agent {
 	return currentAction.getLastActivity();
     }
 
+    /** The last few things this agent was doing, oldest first. */
+    public List<String> getRecentActivities() {
+	return currentAction.getRecentActivities();
+    }
+
     public void setCurrentActivity(String description) {
 	this.currentAction.setActivity(description);
     }

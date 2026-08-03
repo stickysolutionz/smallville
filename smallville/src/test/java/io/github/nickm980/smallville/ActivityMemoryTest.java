@@ -124,9 +124,28 @@ public class ActivityMemoryTest {
 
 	assertEquals(3, memory.split("milling about", -1).length - 1,
 		"only a few of the room should be recorded, got: " + memory);
-	// The agent's own activity leads, before anyone else's. A memory
-	// describes the PREVIOUS activity, which here is the starting "idle".
-	assertTrue(memory.startsWith("idle at Walmart"), "the agent's own doing should lead, got: " + memory);
+	// The agent's own doing leads, before anyone else's. A memory describes
+	// the PREVIOUS activity - here the starting "idle", which is a
+	// placeholder rather than something they did, so it reads as "Spent
+	// time".
+	assertTrue(memory.startsWith("Spent time at Walmart"), "the agent's own doing should lead, got: " + memory);
+    }
+
+    @Test
+    public void the_idle_placeholder_never_reaches_a_memory() {
+	// "idle" is what an agent starts with, not something they did. Left in,
+	// it reached the story - a recap opened with four residents "idle
+	// through the early hours".
+	World world = walmartWith("Joan");
+	Agent joan = world.getAgent("Joan").orElseThrow();
+
+	runActivityStep(world, joan, """
+		Activity: browsing the pet supplies
+		Location: Walmart
+		Emoji: 🛒
+		""");
+
+	assertFalse(lastMemoryOf(joan).toLowerCase().contains("idle"), lastMemoryOf(joan));
     }
 
     @Test

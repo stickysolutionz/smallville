@@ -50,6 +50,7 @@ public class TemplateMapper {
 	result.put("memories", agent.getMemoryStream().getMemories().stream().limit(10).collect(Collectors.toList()));
 	result.put("activity", agent.getCurrentActivity());
 	result.put("lastActivity", agent.getLastActivity());
+	result.put("recentActivities", String.join("; then ", agent.getRecentActivities()));
 	result.put("summary", buildAgentSummary(agent));
 	result.put("locationName", agent.getLocation().getFullPath());
 	result.put("locationChildren", agent.getLocation().getFullPath());

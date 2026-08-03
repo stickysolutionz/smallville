@@ -241,12 +241,20 @@ plans:
     * Do what YOU would be doing. Other people being nearby is not a reason to be doing
       the same thing as them.
 
+    What you have been doing, oldest first: {{agent.recentActivities}}
     A moment ago you were: {{agent.lastActivity}}
+    You have been on this stretch of the day for about {{minutesOnThis}} minutes.
 
-    * Time has passed since then. If you were already doing that, you are further
-      along now, or finished, or on to the next thing - a person does not spend an
-      hour unlacing one shoe. Move it forward rather than describing the same
-      instant again.
+    * Time has passed. If you were already doing that, you are further along now,
+      or finished, or on to the next thing - a person does not spend an hour
+      unlacing one shoe. Move it forward rather than describing the same instant
+      again.
+    * Look at the list above. If you are going back and forth between the same
+      couple of things, stop - nobody alternates between dancing and fetching
+      water for an hour. Either commit to one of them properly, take it somewhere
+      new, or be finished with it and do something else.
+    * The longer you have been on this stretch, the more it should be reaching an
+      end rather than starting over.
     * If the schedule still fits, stay with it and progress within it. Only jump to
       something else if what is going on around you gives you a reason to.
 
