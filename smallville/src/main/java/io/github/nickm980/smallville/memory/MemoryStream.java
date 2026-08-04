@@ -1,5 +1,6 @@
 package io.github.nickm980.smallville.memory;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -8,6 +9,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 import io.github.nickm980.smallville.config.SmallvilleConfig;
+import io.github.nickm980.smallville.entities.SimulationTime;
 import java.util.stream.DoubleStream;
 import java.util.stream.Stream;
 
@@ -82,8 +84,46 @@ public class MemoryStream {
 	}).collect(Collectors.toList());
     }
 
-    public double sumRecency() {
-	return getRecentMemories().stream().flatMapToDouble(memory -> DoubleStream.of(memory.getImportance())).sum();
+    /**
+     * When this agent last reflected. Everything before it has already been
+     * thought about.
+     */
+    private LocalDateTime lastReflectedAt;
+
+    public LocalDateTime getLastReflectedAt() {
+	return lastReflectedAt;
+    }
+
+    public void setLastReflectedAt(LocalDateTime lastReflectedAt) {
+	this.lastReflectedAt = lastReflectedAt;
+    }
+
+    public void markReflected() {
+	this.lastReflectedAt = SimulationTime.now();
+    }
+
+    /**
+     * How much has happened, by weight, since the agent last reflected.
+     * <p>
+     * This used to sum importance across a sliding window of recent memories,
+     * which grows without limit as an agent accumulates them. A threshold tuned
+     * against one run was wrong by the next: a cutoff that fired on 9% of
+     * updates fired on 57% a day later, because the median sum had climbed from
+     * 325 to 706. No fixed number survives that - the measure itself has to
+     * reset.
+     * <p>
+     * Counting only what has arrived since the last reflection is
+     * self-limiting: reflecting drops it back to nothing and it builds again.
+     */
+    public double importanceSinceLastReflection() {
+	return memories
+	    .stream()
+	    .filter(memory -> !(memory instanceof Plan))
+	    .filter(memory -> memory instanceof TemporalMemory)
+	    .filter(memory -> lastReflectedAt == null
+		    || ((TemporalMemory) memory).getTime().isAfter(lastReflectedAt))
+	    .mapToDouble(Memory::getImportance)
+	    .sum();
     }
 
     public List<Memory> getRecentMemories() {

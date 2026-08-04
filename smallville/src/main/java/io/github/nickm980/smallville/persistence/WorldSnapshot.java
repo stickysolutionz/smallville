@@ -105,6 +105,7 @@ public class WorldSnapshot {
 	private String activity;
 	private String lastActivity;
 	private String emoji;
+	private LocalDateTime lastReflectedAt;
 	private List<MemorySnapshot> memories = new ArrayList<>();
 
 	public String getName() {
@@ -153,6 +154,14 @@ public class WorldSnapshot {
 
 	public void setEmoji(String emoji) {
 	    this.emoji = emoji;
+	}
+
+	public LocalDateTime getLastReflectedAt() {
+	    return lastReflectedAt;
+	}
+
+	public void setLastReflectedAt(LocalDateTime lastReflectedAt) {
+	    this.lastReflectedAt = lastReflectedAt;
 	}
 
 	public List<MemorySnapshot> getMemories() {

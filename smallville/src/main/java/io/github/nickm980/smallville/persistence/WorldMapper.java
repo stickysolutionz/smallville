@@ -93,6 +93,7 @@ public final class WorldMapper {
 	stored.setActivity(agent.getCurrentActivity());
 	stored.setLastActivity(agent.getLastActivity());
 	stored.setEmoji(agent.getEmoji());
+	stored.setLastReflectedAt(agent.getMemoryStream().getLastReflectedAt());
 
 	for (Memory memory : agent.getMemoryStream().getMemories()) {
 	    stored.getMemories().add(toSnapshot(memory));
@@ -113,7 +114,6 @@ public final class WorldMapper {
 	    stored.setPlanType(plan.getType() == null ? null : plan.getType().name());
 	    stored.setPlanLocation(plan.getLocation());
 	    stored.setPlanAddressed(plan.isAddressed());
-	    stored.setPlanCreatedAt(plan.getCreatedAt());
 	    stored.setPlanCreatedAt(plan.getCreatedAt());
 	} else if (memory instanceof Observation observation) {
 	    stored.setType("Observation");
@@ -210,6 +210,7 @@ public final class WorldMapper {
 
 	agent.setTraits(stored.getTraits());
 	agent.setCurrentEmoji(stored.getEmoji());
+	agent.getMemoryStream().setLastReflectedAt(stored.getLastReflectedAt());
 
 	for (MemorySnapshot memory : stored.getMemories()) {
 	    Memory restored = restoreMemory(memory);
