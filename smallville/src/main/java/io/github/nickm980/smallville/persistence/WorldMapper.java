@@ -147,7 +147,9 @@ public final class WorldMapper {
 	    SimulationTime.setSimulationTime(snapshot.getSimulationTime());
 	}
 
-	SimulationTime.setStep(Duration.ofMinutes(Math.max(1, snapshot.getStepMinutes())));
+	// The timestep is fixed, so a saved one is deliberately not restored -
+	// otherwise a world saved under an older setting would quietly bring it
+	// back and take every timestep-dependent number with it.
 
 	for (LocationSnapshot stored : snapshot.getLocations()) {
 	    if (stored.getName() == null) {

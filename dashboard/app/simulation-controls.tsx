@@ -8,7 +8,6 @@ import {
   getInfo,
   getSimulationStatus,
   resetSimulation,
-  setTimestep,
   startSimulation,
   stopSimulation,
   SimulationStatus
@@ -90,10 +89,9 @@ export default function SimulationControls() {
   const router = useRouter();
   const [status, setStatus] = useState<SimulationStatus | null>(null);
   const [intervalInput, setIntervalInput] = useState('15');
-  const [timestepInput, setTimestepInput] = useState('15');
+  const [stepMinutes, setStepMinutes] = useState<number>(20);
   const [isPending, setPending] = useState(false);
   const [isResetting, setResetting] = useState(false);
-  const [isTimestepPending, setTimestepPending] = useState(false);
   const initialized = useRef(false);
 
   async function refreshStatus() {
@@ -103,7 +101,7 @@ export default function SimulationControls() {
       setIntervalInput(String(s.intervalSeconds));
       const info = await getInfo();
       if (!Array.isArray(info)) {
-        setTimestepInput(String(info.step));
+        if (info?.step) setStepMinutes(Number(info.step));
       }
       initialized.current = true;
     }
@@ -162,14 +160,6 @@ export default function SimulationControls() {
     setResetting(false);
   }
 
-  async function handleTimestepChange() {
-    const minutes = Math.max(1, Number(timestepInput) || 15);
-    setTimestepInput(String(minutes));
-    setTimestepPending(true);
-    await setTimestep(minutes);
-    setTimestepPending(false);
-  }
-
   const seconds = Math.max(2, Number(intervalInput) || 15);
   const ticksPerMinute = (60 / seconds).toFixed(1);
 
@@ -212,25 +202,14 @@ export default function SimulationControls() {
 
         <Text>≈ {ticksPerMinute} ticks/min</Text>
 
-        <div>
-          <Text>Simulated minutes per tick</Text>
-          <input
-            type="number"
-            min={1}
-            value={timestepInput}
-            disabled={isTimestepPending}
-            className="h-10 w-28 rounded-md border border-gray-200 px-3 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500 disabled:opacity-50"
-            onChange={(e) => setTimestepInput(e.target.value)}
-            onBlur={handleTimestepChange}
-          />
-        </div>
+        <Text className="text-gray-500">{stepMinutes} simulated minutes per tick</Text>
       </Flex>
 
       <Text className="mt-2 text-gray-500">
-        A lower value means more, smaller steps through the day - more LLM
-        calls for the same amount of story. A higher value covers more
-        simulated time per tick, using less compute for the same stretch of
-        story.
+        The interval is how long the simulation waits between ticks in real
+        time. How much simulated time each tick covers is fixed - the gap
+        between conversations, how many ticks a plan spans and how often a day
+        rolls over all depend on it.
       </Text>
 
       <Text className="mt-4">
