@@ -15,6 +15,7 @@ import io.github.nickm980.smallville.entities.Dialog;
 import io.github.nickm980.smallville.entities.Location;
 import io.github.nickm980.smallville.entities.SimulationTime;
 import io.github.nickm980.smallville.memory.Characteristic;
+import io.github.nickm980.smallville.memory.Concern;
 import io.github.nickm980.smallville.memory.Memory;
 import io.github.nickm980.smallville.memory.Observation;
 import io.github.nickm980.smallville.memory.Plan;
@@ -120,6 +121,14 @@ public final class WorldMapper {
 	    stored.setTime(observation.getTime());
 	    stored.setDialog(observation.isDialog());
 	    stored.setReactable(observation.isReactable());
+	} else if (memory instanceof Concern concern) {
+	    stored.setType("Concern");
+	    stored.setTime(concern.getTime());
+	    stored.setExpiresAt(concern.getExpiresAt());
+	    stored.setSource(concern.getSource().name());
+	    stored.setValence(concern.getValence().name());
+	    stored.setDemand(concern.getDemand().name());
+	    stored.setPrivacy(concern.getPrivacy().name());
 	} else if (memory instanceof Reflection) {
 	    stored.setType("Reflection");
 	} else {
@@ -224,6 +233,14 @@ public final class WorldMapper {
 	world.create(agent);
     }
 
+    private static <T extends Enum<T>> T enumOr(String value, Class<T> type, T fallback) {
+	try {
+	    return Enum.valueOf(type, value == null ? "" : value.trim().toUpperCase());
+	} catch (IllegalArgumentException e) {
+	    return fallback;
+	}
+    }
+
     private static Memory restoreMemory(MemorySnapshot stored) {
 	String description = stored.getDescription() == null ? "" : stored.getDescription();
 
@@ -266,6 +283,15 @@ public final class WorldMapper {
 	    observation.setDialog(stored.isDialog());
 	    observation.setReactable(stored.isReactable());
 	    return observation;
+	case "Concern":
+	    java.time.Duration lifetime = stored.getExpiresAt() == null ? java.time.Duration.ofHours(12)
+		    : java.time.Duration.between(time, stored.getExpiresAt());
+
+	    return new Concern(description, time, lifetime.isNegative() ? java.time.Duration.ZERO : lifetime,
+		    enumOr(stored.getSource(), Concern.Source.class, Concern.Source.CHANCE),
+		    enumOr(stored.getValence(), Concern.Valence.class, Concern.Valence.AMBIGUOUS),
+		    enumOr(stored.getDemand(), Concern.Demand.class, Concern.Demand.NOTHING),
+		    enumOr(stored.getPrivacy(), Concern.Privacy.class, Concern.Privacy.PRIVATE));
 	case "Reflection":
 	    return new Reflection(description);
 	case "Characteristic":

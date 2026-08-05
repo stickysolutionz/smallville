@@ -62,6 +62,22 @@ public class GeneralConfig {
 
     // Memory retrieval. Defaults are applied here rather than relying on the
     // yaml so an older config.yaml sitting next to the jar still starts.
+    /**
+     * How often something from outside the town lands on somebody, per
+     * simulated day, across the whole town. Rare on purpose - a town where
+     * something happens to somebody once a day is a town; one where everybody
+     * gets news every morning is a soap opera. Set to 0 to switch it off.
+     */
+    private double eventsPerSimulatedDay = 1.0;
+
+    public double getEventsPerSimulatedDay() {
+	return eventsPerSimulatedDay;
+    }
+
+    public void setEventsPerSimulatedDay(double eventsPerSimulatedDay) {
+	this.eventsPerSimulatedDay = eventsPerSimulatedDay;
+    }
+
     private double recencyHalfLifeHours = 8;
     private int retrievalCount = 3;
     private double recencyWeight = 1;

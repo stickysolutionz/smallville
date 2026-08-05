@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import io.github.nickm980.smallville.config.SmallvilleConfig;
 import io.github.nickm980.smallville.entities.Agent;
 import io.github.nickm980.smallville.entities.SimulationTime;
+import io.github.nickm980.smallville.memory.Concern;
 import io.github.nickm980.smallville.memory.MemoryStream;
 import io.github.nickm980.smallville.memory.Plan;
 import io.github.nickm980.smallville.memory.PlanType;
@@ -51,6 +52,10 @@ public class TemplateMapper {
 	result.put("activity", agent.getCurrentActivity());
 	result.put("lastActivity", agent.getLastActivity());
 	result.put("recentActivities", String.join("; then ", agent.getRecentActivities()));
+	// Anything from outside the town still weighing on them. Empty most of
+	// the time, which is the point - it should be rare enough to matter.
+	result.put("concerns", agent.getMemoryStream().getActiveConcerns().stream().map(Concern::describe)
+		.collect(Collectors.joining("; ")));
 	result.put("summary", buildAgentSummary(agent));
 	result.put("locationName", agent.getLocation().getFullPath());
 	result.put("locationChildren", agent.getLocation().getFullPath());

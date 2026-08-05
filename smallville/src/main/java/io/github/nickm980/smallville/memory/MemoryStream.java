@@ -126,6 +126,13 @@ public class MemoryStream {
 	    .sum();
     }
 
+    /**
+     * Things from outside the town that are still weighing on this agent.
+     */
+    public List<Concern> getActiveConcerns() {
+	return filterMemoriesByType(Concern.class).filter(Concern::isActive).collect(Collectors.toList());
+    }
+
     public List<Memory> getRecentMemories() {
 	List<Memory> result = memories
 	    .stream()

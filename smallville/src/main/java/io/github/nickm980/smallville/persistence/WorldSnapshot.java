@@ -190,6 +190,11 @@ public class WorldSnapshot {
 	private LocalDateTime planCreatedAt;
 	private boolean dialog;
 	private boolean reactable;
+	private LocalDateTime expiresAt;
+	private String source;
+	private String valence;
+	private String demand;
+	private String privacy;
 
 	public String getType() {
 	    return type;
@@ -262,6 +267,17 @@ public class WorldSnapshot {
 	public void setDialog(boolean dialog) {
 	    this.dialog = dialog;
 	}
+
+	public LocalDateTime getExpiresAt() { return expiresAt; }
+	public void setExpiresAt(LocalDateTime expiresAt) { this.expiresAt = expiresAt; }
+	public String getSource() { return source; }
+	public void setSource(String source) { this.source = source; }
+	public String getValence() { return valence; }
+	public void setValence(String valence) { this.valence = valence; }
+	public String getDemand() { return demand; }
+	public void setDemand(String demand) { this.demand = demand; }
+	public String getPrivacy() { return privacy; }
+	public void setPrivacy(String privacy) { this.privacy = privacy; }
 
 	public boolean isReactable() {
 	    return reactable;

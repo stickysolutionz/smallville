@@ -1,5 +1,6 @@
 package io.github.nickm980.smallville.prompts;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -27,6 +28,7 @@ import io.github.nickm980.smallville.entities.Conversation;
 import io.github.nickm980.smallville.entities.Dialog;
 import io.github.nickm980.smallville.entities.SimulationTime;
 import io.github.nickm980.smallville.llm.LLM;
+import io.github.nickm980.smallville.memory.Concern;
 import io.github.nickm980.smallville.memory.Memory;
 import io.github.nickm980.smallville.memory.Plan;
 import io.github.nickm980.smallville.memory.PlanType;
@@ -210,6 +212,53 @@ public class ChatService implements Prompts {
 	    .max(LocalDateTime::compareTo)
 	    .map(madeAt -> Math.max(0, java.time.Duration.between(madeAt, SimulationTime.now()).toMinutes()))
 	    .orElse(0L);
+    }
+
+    /**
+     * Invents something that has just happened to this agent from outside the
+     * town.
+     * <p>
+     * Returns null rather than throwing if the model gives back something
+     * unusable - nothing is broken when an event fails to arrive, the town
+     * simply has a quieter day.
+     */
+    public Concern generateEvent(Agent agent) {
+	PromptRequest prompt = new PromptBuilder()
+	    .withAgent(agent)
+	    .with("location", locationOf(agent))
+	    .with("time", SimulationTime.now().format(DateTimeFormatter.ofPattern("EEEE, h:mm a")))
+	    .setPrompt(SmallvilleConfig.getPrompts().getEvents().getGenerate())
+	    .build();
+
+	try {
+	    JsonNode node = new ObjectMapper()
+		.readTree(Util.stripCodeFence(chat.sendChat(prompt.labelled("externalEvent").asJsonResponse(), .9)));
+
+	    String description = node.path("event").asText("").trim();
+
+	    if (description.isEmpty()) {
+		return null;
+	    }
+
+	    long hours = Math.max(4, Math.min(48, node.path("hours").asLong(12)));
+
+	    return new Concern(description, SimulationTime.now(), Duration.ofHours(hours),
+		    readEnum(node, "source", Concern.Source.class, Concern.Source.CHANCE),
+		    readEnum(node, "valence", Concern.Valence.class, Concern.Valence.AMBIGUOUS),
+		    readEnum(node, "demand", Concern.Demand.class, Concern.Demand.NOTHING),
+		    readEnum(node, "privacy", Concern.Privacy.class, Concern.Privacy.PRIVATE));
+	} catch (Exception e) {
+	    LOG.warn("[Events] Could not read a generated event: " + e.getMessage());
+	    return null;
+	}
+    }
+
+    private static <T extends Enum<T>> T readEnum(JsonNode node, String field, Class<T> type, T fallback) {
+	try {
+	    return Enum.valueOf(type, node.path(field).asText("").trim().toUpperCase());
+	} catch (IllegalArgumentException e) {
+	    return fallback;
+	}
     }
 
     /**

@@ -32,6 +32,12 @@ yesterdayFormat: EEEE MMMM d
 # reflections in UpdateReflection, because this depends on importance scores
 # that come back from another model call and are sometimes not parsed at all.
 reflectionCutoff: 150
+
+# How often something from outside the town lands on somebody, per simulated day,
+# across the whole town - a phone call from family, a letter, a wallet on the
+# pavement. This is the only thing in the simulation that creates pressure the
+# agents did not choose. Rare on purpose. Set to 0 to switch it off.
+eventsPerSimulatedDay: 1.0
 #Set to true if the simulation.yaml file should be used to initialize the simulation
 simulationFile: false
 # How many times ChatGPT should attempt to send a prompt before aborting

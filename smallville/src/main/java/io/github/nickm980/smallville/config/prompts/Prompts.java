@@ -8,6 +8,15 @@ public class Prompts {
     private AgentPrompts agent;
     private MiscPrompts misc;
     private StoryPrompts story;
+    private EventPrompts events;
+
+    public EventPrompts getEvents() {
+	return events;
+    }
+
+    public void setEvents(EventPrompts events) {
+	this.events = events;
+    }
 
     public StoryPrompts getStory() {
 	return story;

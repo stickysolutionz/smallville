@@ -166,6 +166,7 @@ plans:
     What they want out of today: {{#agent.plans}}{{description}}; {{/agent.plans}}
     Still outstanding: {{outstandingGoals}}
     Relevant Memories: {{#memories.relevant}}{{description}}; {{/memories.relevant}}
+    On their mind, from outside the town: {{agent.concerns}}
     Observation: {{observation}}
 
     It is {{date.time}}. Given where {{agent.name}} is and what is going on around
@@ -220,6 +221,11 @@ plans:
     Relevant Memories: {{#memories.relevant}}{{description}}; {{/memories.relevant}}
     Observation ({{date.time}}): {{observation}}
 
+    On their mind, from outside the town: {{agent.concerns}}
+
+    If something is weighing on them, today should show it - what they mean to do
+    is shaped by it, even if there is nothing they can actually do about it.
+
     It is currently {{date.full}}. What does {{agent.name}} want out of today?
 
   current: |
@@ -240,6 +246,11 @@ plans:
       the company out of it either way.
     * Do what YOU would be doing. Other people being nearby is not a reason to be doing
       the same thing as them.
+
+    On your mind, from outside this town: {{agent.concerns}}
+
+    * If something is weighing on you it colours what you do, but you still have a
+      day to get through. People carry things quietly.
 
     What you have been doing, oldest first: {{agent.recentActivities}}
     A moment ago you were: {{agent.lastActivity}}
@@ -419,3 +430,51 @@ story:
     - Together they must cover: their job or daily role, at least two distinct personality traits (not just "friendly" or "kind" alone - be specific and a little unusual), one meaningful relationship or social dynamic (family, friend, rival, unrequited crush, etc.), one personal goal or desire, and one flaw, fear, secret, or contradiction that makes them feel like a real person rather than a stock character.
     - Avoid generic filler like "X likes reading" as the only trait - go deeper into why, or pair it with something more surprising.
     - Do not repeat the same idea across multiple entries.
+
+events:
+  # Nothing in this town is ever at stake on its own. This is where wanting
+  # comes from: a fact arrives from outside and the agent has to live with it.
+  # Deliberately states what happened and never what it means, for the same
+  # reason the plan prompts do - told how to feel, a model writes the reaction
+  # instead of letting the character have one.
+  generate: |
+    Invent one ordinary thing that just happened to somebody, from outside the small town they live in.
+
+    Respond with only a json object, in exactly this shape:
+    {"event": "Mom texted. Her car failed inspection, the repair is $1,200.",
+     "source": "family", "valence": "bad", "demand": "costly", "privacy": "private", "hours": 30}
+
+    * "source" is one of: family, friend, institution, chance.
+      - family is heaviest, an obligation that cannot be declined cleanly
+      - friend is real but refusable
+      - institution is a bank, landlord, employer, clinic, the county - impersonal, and you cannot argue with it
+      - chance is something they found, saw, or had happen in passing
+    * "valence" is one of: good, bad, ambiguous.
+      - ambiguous is often the most interesting: "your sister called twice and left no voicemail"
+        is all pressure and no information.
+    * "demand" is one of: nothing, small, costly.
+    * "privacy" is one of: open, private, shameful.
+      - open, they would mention it to anyone; private, only to someone they trusted;
+        shameful, they would rather nobody knew.
+    * "hours" is how long this stays on their mind, between 4 and 48.
+
+    Writing it:
+
+    * State only what happened. Never how they feel about it, never what they should do.
+      "Mom texted, her car failed inspection" - not "Joan is worried about her mother".
+    * American, present day, specific. Dollar amounts, real places, actual sums.
+    * Most things that happen to people are small. A declined card, a package that
+      says delivered and is not there, somebody waving you ahead in line. Reserve
+      the heavy ones - keep most of these ordinary.
+    * A sting in the detail is worth more than a big event. "She didn't ask for
+      money, which is worse." "He never calls just to talk."
+    * It must fit where they are and what time it is. No letters at a nightclub,
+      no package deliveries at 3am.
+    * Nobody else in town may appear in it. These people are strangers to each
+      other, and someone's mother has no reason to have heard of them.
+
+    ---
+    This is about:
+    {{agent.summary}}
+
+    They are at {{location}}, and it is {{time}}.

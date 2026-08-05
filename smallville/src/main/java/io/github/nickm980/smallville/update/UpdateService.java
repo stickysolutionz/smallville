@@ -16,7 +16,9 @@ import io.github.nickm980.smallville.entities.SimulationTime;
 import io.github.nickm980.smallville.events.EventBus;
 import io.github.nickm980.smallville.events.agent.AgentUpdateEvent;
 import io.github.nickm980.smallville.llm.LLM;
+import io.github.nickm980.smallville.memory.Concern;
 import io.github.nickm980.smallville.memory.Observation;
+import io.github.nickm980.smallville.memory.PlanType;
 import io.github.nickm980.smallville.prompts.ChatService;
 
 /**
@@ -140,6 +142,31 @@ public class UpdateService {
 
 	world.create(conversation);
 	recordRelationships(conversation);
+    }
+
+    /**
+     * Lands something from outside the town on an agent.
+     * <p>
+     * The concern goes into their memory stream, where the planning prompts pick
+     * it up while it stays live, and their plans are torn up so the rest of the
+     * day is shaped by it rather than carrying on as though nothing happened.
+     */
+    public void deliverEvent(Agent agent) {
+	Concern concern = chatService.generateEvent(agent);
+
+	if (concern == null) {
+	    return;
+	}
+
+	LOG.info("[Events] " + agent.getFullName() + ": " + concern.getDescription());
+	agent.getMemoryStream().add(concern);
+
+	// Whatever they meant to do today was decided before this happened.
+	agent.getMemoryStream().prunePlans(PlanType.SHORT_TERM);
+
+	if (concern.getDemand() != Concern.Demand.NOTHING) {
+	    agent.getMemoryStream().prunePlans(PlanType.LONG_TERM);
+	}
     }
 
     /**

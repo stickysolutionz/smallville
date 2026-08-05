@@ -747,6 +747,54 @@ public class SimulationService {
 	}
 
 	exclusively(this::triggerGroupConversations);
+	exclusively(this::maybeDeliverAnEvent);
+    }
+
+    /**
+     * Occasionally lets something from outside the town land on somebody.
+     * <p>
+     * This is where wanting comes from. Nothing inside the simulation is ever at
+     * stake on its own - agents move, talk and form opinions, but nobody needs
+     * anything they might not get, so nothing can turn. Rather than modelling an
+     * economy for that, a fact simply arrives and the agent has to live with it.
+     * <p>
+     * Rare on purpose. A town where something happens to somebody roughly once a
+     * day is a town; one where everybody gets news every morning is a soap
+     * opera, and the events stop landing.
+     */
+    private void maybeDeliverAnEvent() {
+	double perDay = SmallvilleConfig.getConfig().getEventsPerSimulatedDay();
+
+	if (perDay <= 0) {
+	    return;
+	}
+
+	double ticksPerDay = Math.max(1, Duration.ofDays(1).toMinutes() / (double) SimulationTime
+	    .getStepDurationInMinutes());
+
+	if (random.nextDouble() >= perDay / ticksPerDay) {
+	    return;
+	}
+
+	// One thing at a time. Somebody already carrying something is not
+	// eligible, or it stacks into melodrama.
+	List<Agent> eligible = world
+	    .getAgents()
+	    .stream()
+	    .filter(agent -> agent.getMemoryStream().getActiveConcerns().isEmpty())
+	    .collect(Collectors.toList());
+
+	if (eligible.isEmpty()) {
+	    return;
+	}
+
+	Agent unlucky = eligible.get(random.nextInt(eligible.size()));
+
+	try {
+	    prompts.deliverEvent(unlucky);
+	} catch (Exception e) {
+	    LOG.error("Failed to deliver an event to " + unlucky.getFullName(), e);
+	}
     }
 
     private static final int MAX_GROUP_PARTICIPANTS = 5;
