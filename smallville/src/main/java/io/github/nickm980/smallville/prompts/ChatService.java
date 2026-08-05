@@ -222,11 +222,12 @@ public class ChatService implements Prompts {
      * unusable - nothing is broken when an event fails to arrive, the town
      * simply has a quieter day.
      */
-    public Concern generateEvent(Agent agent) {
+    public Concern generateEvent(Agent agent, Concern.Valence valence) {
 	PromptRequest prompt = new PromptBuilder()
 	    .withAgent(agent)
 	    .with("location", locationOf(agent))
 	    .with("time", SimulationTime.now().format(DateTimeFormatter.ofPattern("EEEE, h:mm a")))
+	    .with("valence", describeValence(valence))
 	    .setPrompt(SmallvilleConfig.getPrompts().getEvents().getGenerate())
 	    .build();
 
@@ -242,15 +243,30 @@ public class ChatService implements Prompts {
 
 	    long hours = Math.max(4, Math.min(48, node.path("hours").asLong(12)));
 
+	    // Valence is the caller's, not the model's. Left to the model the mix
+	    // is whatever it happens to lean toward, which is neither known nor
+	    // tunable - and the balance between good and bad news is the main
+	    // thing that decides what kind of town this is.
 	    return new Concern(description, SimulationTime.now(), Duration.ofHours(hours),
-		    readEnum(node, "source", Concern.Source.class, Concern.Source.CHANCE),
-		    readEnum(node, "valence", Concern.Valence.class, Concern.Valence.AMBIGUOUS),
+		    readEnum(node, "source", Concern.Source.class, Concern.Source.CHANCE), valence,
 		    readEnum(node, "demand", Concern.Demand.class, Concern.Demand.NOTHING),
 		    readEnum(node, "privacy", Concern.Privacy.class, Concern.Privacy.PRIVATE));
 	} catch (Exception e) {
 	    LOG.warn("[Events] Could not read a generated event: " + e.getMessage());
 	    return null;
 	}
+    }
+
+    private static String describeValence(Concern.Valence valence) {
+	return switch (valence) {
+	case GOOD -> "Something good, or at least welcome. It does not have to be large - "
+		+ "most good news is small.";
+	case BAD -> "Something unwelcome. Again it does not have to be large: a fee, a "
+		+ "cancellation, a bill, an awkward moment. Save the heavy ones for rarely.";
+	case AMBIGUOUS -> "Something they cannot read either way. No information, all "
+		+ "weight - a call with no voicemail, a note with no explanation, a "
+		+ "message that says only \"can we talk\".";
+	};
     }
 
     private static <T extends Enum<T>> T readEnum(JsonNode node, String field, Class<T> type, T fallback) {

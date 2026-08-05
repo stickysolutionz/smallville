@@ -68,7 +68,41 @@ public class GeneralConfig {
      * something happens to somebody once a day is a town; one where everybody
      * gets news every morning is a soap opera. Set to 0 to switch it off.
      */
-    private double eventsPerSimulatedDay = 1.0;
+    private double eventsPerSimulatedDay = 2.5;
+
+    /**
+     * Relative frequency of each kind of event. Bad leads on purpose: good news
+     * is a moment, bad news is a problem that persists, and something
+     * unreadable is a problem that has not arrived yet. Even odds would make a
+     * town where nothing much is ever at stake.
+     */
+    private double badEventWeight = 45;
+    private double ambiguousEventWeight = 30;
+    private double goodEventWeight = 25;
+
+    public double getBadEventWeight() {
+	return badEventWeight;
+    }
+
+    public void setBadEventWeight(double badEventWeight) {
+	this.badEventWeight = badEventWeight;
+    }
+
+    public double getAmbiguousEventWeight() {
+	return ambiguousEventWeight;
+    }
+
+    public void setAmbiguousEventWeight(double ambiguousEventWeight) {
+	this.ambiguousEventWeight = ambiguousEventWeight;
+    }
+
+    public double getGoodEventWeight() {
+	return goodEventWeight;
+    }
+
+    public void setGoodEventWeight(double goodEventWeight) {
+	this.goodEventWeight = goodEventWeight;
+    }
 
     public double getEventsPerSimulatedDay() {
 	return eventsPerSimulatedDay;

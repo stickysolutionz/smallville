@@ -440,18 +440,18 @@ events:
   generate: |
     Invent one ordinary thing that just happened to somebody, from outside the small town they live in.
 
+    What kind of thing it should be, decided already:
+    {{valence}}
+
     Respond with only a json object, in exactly this shape:
     {"event": "Mom texted. Her car failed inspection, the repair is $1,200.",
-     "source": "family", "valence": "bad", "demand": "costly", "privacy": "private", "hours": 30}
+     "source": "family", "demand": "costly", "privacy": "private", "hours": 30}
 
     * "source" is one of: family, friend, institution, chance.
       - family is heaviest, an obligation that cannot be declined cleanly
       - friend is real but refusable
       - institution is a bank, landlord, employer, clinic, the county - impersonal, and you cannot argue with it
       - chance is something they found, saw, or had happen in passing
-    * "valence" is one of: good, bad, ambiguous.
-      - ambiguous is often the most interesting: "your sister called twice and left no voicemail"
-        is all pressure and no information.
     * "demand" is one of: nothing, small, costly.
     * "privacy" is one of: open, private, shameful.
       - open, they would mention it to anyone; private, only to someone they trusted;

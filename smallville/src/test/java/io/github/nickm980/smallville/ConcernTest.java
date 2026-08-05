@@ -71,7 +71,7 @@ public class ConcernTest {
 		{"event": "Mom texted. Her car failed inspection, the repair is $1,200.",
 		 "source": "family", "valence": "bad", "demand": "costly",
 		 "privacy": "private", "hours": 30}
-		""").generateEvent(joan);
+		""").generateEvent(joan, Concern.Valence.BAD);
 
 	assertNotNull(concern);
 	assertEquals(Concern.Source.FAMILY, concern.getSource());
@@ -87,7 +87,8 @@ public class ConcernTest {
 	// quieter day.
 	World world = townWithJoan();
 
-	assertNull(replying(world, "I'm sorry, I can't help with that.").generateEvent(world.getAgent("Joan").orElseThrow()));
+	assertNull(replying(world, "I'm sorry, I can't help with that.")
+	    .generateEvent(world.getAgent("Joan").orElseThrow(), Concern.Valence.BAD));
     }
 
     private static void assertNull(Object value) {
@@ -101,11 +102,28 @@ public class ConcernTest {
 	Concern concern = replying(world, """
 		{"event": "A package says delivered. It isn't here.", "source": "postman",
 		 "valence": "confusing", "demand": "maybe", "privacy": "whatever", "hours": 9}
-		""").generateEvent(world.getAgent("Joan").orElseThrow());
+		""").generateEvent(world.getAgent("Joan").orElseThrow(), Concern.Valence.AMBIGUOUS);
 
 	assertNotNull(concern);
 	assertEquals(Concern.Source.CHANCE, concern.getSource());
 	assertEquals(Concern.Valence.AMBIGUOUS, concern.getValence());
+    }
+
+    @Test
+    public void the_caller_decides_the_valence_not_the_model() {
+        // Left to the model the mix is whatever it happens to lean toward,
+        // which is neither knowable nor tunable - and the balance between good
+        // and bad news is most of what decides what kind of town this is.
+        World world = townWithJoan();
+
+        Concern concern = replying(world, """
+                {"event": "A neighbor two states away left a voicemail.",
+                 "source": "family", "valence": "good", "demand": "small",
+                 "privacy": "open", "hours": 8}
+                """).generateEvent(world.getAgent("Joan").orElseThrow(), Concern.Valence.BAD);
+
+        assertEquals(Concern.Valence.BAD, concern.getValence(),
+                "the model said good; the simulation asked for bad and should win");
     }
 
     @Test

@@ -38,7 +38,9 @@ import io.github.nickm980.smallville.exceptions.SmallvilleException;
 import io.github.nickm980.smallville.llm.LLM;
 import io.github.nickm980.smallville.locations.LocationImageMeta;
 import io.github.nickm980.smallville.locations.LocationImageStore;
+import io.github.nickm980.smallville.config.GeneralConfig;
 import io.github.nickm980.smallville.memory.Characteristic;
+import io.github.nickm980.smallville.memory.Concern;
 import io.github.nickm980.smallville.memory.Memory;
 import io.github.nickm980.smallville.memory.MemoryStream;
 import io.github.nickm980.smallville.memory.Observation;
@@ -751,6 +753,36 @@ public class SimulationService {
     }
 
     /**
+     * Picks whether the next thing to happen is good, bad, or unreadable.
+     * <p>
+     * Weighted rather than even, and decided here rather than by the model.
+     * Left to the model the mix is whatever it happens to lean toward, which is
+     * neither known nor adjustable - and this ratio is most of what decides
+     * what kind of town this is. Bad leads because it is what creates pressure:
+     * good news is a moment, bad news is a problem that persists, and something
+     * unreadable is a problem that has not arrived yet.
+     */
+    private Concern.Valence rollValence() {
+	GeneralConfig config = SmallvilleConfig.getConfig();
+	double bad = Math.max(0, config.getBadEventWeight());
+	double ambiguous = Math.max(0, config.getAmbiguousEventWeight());
+	double good = Math.max(0, config.getGoodEventWeight());
+	double total = bad + ambiguous + good;
+
+	if (total <= 0) {
+	    return Concern.Valence.AMBIGUOUS;
+	}
+
+	double roll = random.nextDouble() * total;
+
+	if (roll < bad) {
+	    return Concern.Valence.BAD;
+	}
+
+	return roll < bad + ambiguous ? Concern.Valence.AMBIGUOUS : Concern.Valence.GOOD;
+    }
+
+    /**
      * Occasionally lets something from outside the town land on somebody.
      * <p>
      * This is where wanting comes from. Nothing inside the simulation is ever at
@@ -791,7 +823,7 @@ public class SimulationService {
 	Agent unlucky = eligible.get(random.nextInt(eligible.size()));
 
 	try {
-	    prompts.deliverEvent(unlucky);
+	    prompts.deliverEvent(unlucky, rollValence());
 	} catch (Exception e) {
 	    LOG.error("Failed to deliver an event to " + unlucky.getFullName(), e);
 	}

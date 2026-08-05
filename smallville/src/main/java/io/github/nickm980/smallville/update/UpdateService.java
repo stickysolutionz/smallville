@@ -151,8 +151,8 @@ public class UpdateService {
      * it up while it stays live, and their plans are torn up so the rest of the
      * day is shaped by it rather than carrying on as though nothing happened.
      */
-    public void deliverEvent(Agent agent) {
-	Concern concern = chatService.generateEvent(agent);
+    public void deliverEvent(Agent agent, Concern.Valence valence) {
+	Concern concern = chatService.generateEvent(agent, valence);
 
 	if (concern == null) {
 	    return;
