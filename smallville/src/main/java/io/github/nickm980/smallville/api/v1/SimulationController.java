@@ -120,7 +120,11 @@ public final class SimulationController {
 
     @Post("/agents/generate")
     public void generateCharacter(Context ctx) {
-	GeneratedCharacterResponse result = service.generateCharacter();
+	// 0 is the worst person in town, 100 the best. Defaults to the middle,
+	// which is where most people are.
+	String alignment = ctx.queryParam("alignment");
+	GeneratedCharacterResponse result = service
+	    .generateCharacter(alignment == null ? 50 : Double.parseDouble(alignment));
 	ctx.json(result);
     }
 

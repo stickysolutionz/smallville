@@ -289,7 +289,7 @@ public class SimulationService {
 	world.create(agent);
     }
 
-    public GeneratedCharacterResponse generateCharacter() {
+    public GeneratedCharacterResponse generateCharacter(double alignment) {
 	List<String> existingNames = world
 	    .getAgents()
 	    .stream()
@@ -305,6 +305,7 @@ public class SimulationService {
 	    try {
 		PromptRequest request = new PromptBuilder()
 		    .with("existingNames", existingNames.isEmpty() ? "none yet" : String.join(", ", existingNames))
+		    .with("alignment", describeAlignment(alignment))
 		    .setPrompt(SmallvilleConfig.getPrompts().getStory().getGenerateCharacter())
 		    .build();
 
@@ -331,6 +332,36 @@ public class SimulationService {
 	return result;
     }
 
+    /**
+     * Turns a 0-100 dial into a description of what sort of person to write.
+     * <p>
+     * Deliberately not "give them nasty traits" at one end and "nice traits" at
+     * the other. What shifts is what they want and who pays for it. The middle
+     * is the default and the most useful: most people are neither, and a town of
+     * saints is as flat as a town of monsters.
+     * <p>
+     * Every band insists the character show on the outside. Under this
+     * simulation people are only known by being watched, so a villain whose
+     * villainy is entirely interior can never be found out, and may as well not
+     * have it.
+     */
+    private static String describeAlignment(double alignment) {
+	double dial = Math.max(0, Math.min(100, alignment));
+
+	String kind = dial < 15
+		? "Somebody genuinely dangerous. What they want costs other people badly, and they have made their peace with that. Give them a routine that a dangerous person would actually keep, and make what they do visible in some small way - somebody watching closely could notice something is off, even if they could not say what."
+		: dial < 35
+			? "Somebody selfish, who will take from people when it suits them. Not a monster - they would tell you they are a normal person having a hard time, and they would half believe it. What they take should show in how they behave, not just in what they think."
+			: dial < 65
+				? "An ordinary person with ordinary mixed motives. Mostly decent, occasionally not, in the way most people are. Their flaw should be the kind that annoys the people who love them rather than the kind that ruins lives."
+				: dial < 85
+					? "Somebody who genuinely puts other people first, and pays for it. Not a saint - they are tired, or taken advantage of, or quietly resentful about it, and it still does not stop them."
+					: "Somebody good in a way that costs them dearly and that they never mention. Their want should be for somebody else entirely. Give them a flaw that comes from the same place as the kindness.";
+
+	return kind + " (Written to a scale where 0 is the worst person in town and 100 the best; this one is " + Math
+	    .round(dial) + ".)";
+    }
+
     private GeneratedCharacterResponse parseGeneratedCharacter(String raw) {
 	String cleaned = Util.stripCodeFence(raw);
 	ObjectMapper objectMapper = new ObjectMapper();
@@ -339,17 +370,17 @@ public class SimulationService {
 	    JsonNode node = objectMapper.readTree(cleaned);
 	    GeneratedCharacterResponse result = new GeneratedCharacterResponse();
 
-	    String name = node.get("name").asText().trim();
-	    List<String> memories = new ArrayList<>();
+	    result.setName(node.path("name").asText("").trim());
+	    result.setAnchor(node.path("anchor").asText("").trim());
+	    result.setWant(node.path("want").asText("").trim());
+	    result.setBehavior(node.path("behavior").asText("").trim());
+	    result.setFlaw(node.path("flaw").asText("").trim());
+	    result.setTie(node.path("tie").asText("").trim());
+	    result.setTell(node.path("tell").asText("").trim());
 
-	    node.get("memories").forEach(memory -> memories.add(memory.asText()));
-
-	    if (name.isEmpty() || memories.isEmpty()) {
-		throw new SmallvilleException("Generated character was missing a name or memories");
+	    if (result.getName().isEmpty() || result.getMemories().isEmpty()) {
+		throw new SmallvilleException("Generated character was missing a name or any traits");
 	    }
-
-	    result.setName(name);
-	    result.setMemories(memories);
 
 	    return result;
 	} catch (Exception e) {

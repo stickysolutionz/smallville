@@ -107,6 +107,21 @@ public class PromptsConfigTest {
 		"plans.current is missing {{agent.lastActivity}}");
     }
 
+    @Test
+    public void the_character_generator_asks_for_all_six_parts() {
+        // A loose list of traits reliably comes back as adjectives, which
+        // produce nothing at nine in the morning. These six are the ones the
+        // simulation can act on.
+        String prompt = SmallvilleConfig.getPrompts().getStory().getGenerateCharacter();
+
+        for (String part : new String[] { "anchor", "want", "behavior", "flaw", "tie", "tell" }) {
+            assertTrue(prompt.contains("\"" + part + "\""), "generateCharacter is missing " + part);
+        }
+
+        assertTrue(prompt.contains("{{alignment}}"), "generateCharacter is missing {{alignment}}");
+        assertTrue(prompt.contains("{{existingNames}}"), "generateCharacter is missing {{existingNames}}");
+    }
+
     private static void assertFilled(String prompt, String name) {
 	assertNotNull(prompt, name + " is missing from prompts.yaml");
 	assertTrue(!prompt.isBlank(), name + " is empty");

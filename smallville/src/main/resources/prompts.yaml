@@ -417,19 +417,51 @@ story:
     Write plain past-tense prose, no headings or bullet points. Be compact - aim for a few paragraphs at most - but never drop a named person or a concrete event just to save room. Do not invent anything that is not in the material above.
 
   generateCharacter: |
-    Invent an original resident of a small town for a life simulation game.
+    Invent one resident of a small American town for a life simulation.
 
-    Names already in use, your character's name (first and last) must NOT match or closely resemble any of these: {{existingNames}}
+    Respond with only a json object, in exactly this shape:
+    {"name": "First Last",
+     "anchor": "Runs the auto shop on Main, open by seven, closed by six",
+     "want": "To buy the building before the landlord sells it out from under him",
+     "behavior": "Fixes things that are not broken when he has something on his mind",
+     "flaw": "Undercharges people he likes and cannot afford to",
+     "tie": "His brother co-signed the shop lease and has not spoken to him since",
+     "tell": "Wipes his hands on a rag long after they are clean"}
 
-    Respond with only a json object, no markdown code fences, no commentary, in exactly this shape:
-    {"name": "First Last", "memories": ["...", "...", "...", "...", "..."]}
+    Each of the six does a specific job. Write one sentence for each.
 
-    Rules for "memories":
-    - Provide 5 to 7 entries.
-    - Each entry is a separate, specific sentence written in third person, starting with the character's first name.
-    - Together they must cover: their job or daily role, at least two distinct personality traits (not just "friendly" or "kind" alone - be specific and a little unusual), one meaningful relationship or social dynamic (family, friend, rival, unrequited crush, etc.), one personal goal or desire, and one flaw, fear, secret, or contradiction that makes them feel like a real person rather than a stock character.
-    - Avoid generic filler like "X likes reading" as the only trait - go deeper into why, or pair it with something more surprising.
-    - Do not repeat the same idea across multiple entries.
+    * "anchor" - a job or routine that puts them somewhere at a predictable time.
+      This is the most important one. Where somebody means to be is what puts them
+      in a room with other people, and everything else in this town comes from
+      that. A character with no routine has no reason to leave the house.
+    * "want" - something they are chasing or avoiding that a single day will not
+      settle. Not a mood. Something with a shape.
+    * "behavior" - something they visibly DO. Not something they are. "Reheats the
+      same coffee four times" tells you more than "distracted", and the simulation
+      can act on the first and not the second.
+    * "flaw" - something that costs them, and that they do anyway.
+    * "tie" - one person off-screen: family, an ex, a creditor, somebody they owe
+      or avoid. Nobody who lives in the town.
+    * "tell" - something small and physical that another person could notice by
+      watching them. This one matters more than it looks: people here only learn
+      about each other by observation, so anything that never shows on the outside
+      can never be found out.
+
+    Rules:
+
+    * Never write an adjective where a verb will do. No "kind and generous", no
+      "highly analytical", no "above average intelligence" - none of those produce
+      anything at nine in the morning.
+    * No stats. Intelligence, strength and looks are not character.
+    * Ordinary and specific beats large and vague. Most people are not remarkable
+      and are interesting anyway.
+    * The name must not match or resemble any of these: {{existingNames}}
+
+    Who they are:
+    {{alignment}}
+
+  # Everything about a character has to be visible eventually or it may as well
+  # not exist - see the note on "tell" above.
 
 events:
   # Nothing in this town is ever at stake on its own. This is where wanting

@@ -313,12 +313,29 @@ export async function getDiary(name: string): Promise<DiaryEntry[]> {
 
 export interface GeneratedCharacter {
   name: string;
-  memories: string[];
+  /** A routine that puts them somewhere at a predictable time. */
+  anchor: string;
+  /** Something they are chasing that a day will not settle. */
+  want: string;
+  /** Something they visibly do, rather than something they are. */
+  behavior: string;
+  /** Something that costs them, and that they do anyway. */
+  flaw: string;
+  /** Somebody off-screen - family, an ex, a creditor. */
+  tie: string;
+  /** Something small another agent could notice by watching. */
+  tell: string;
 }
 
-export async function generateCharacter(): Promise<GeneratedCharacter | null> {
+/**
+ * @param alignment 0 is the worst person in town, 100 the best. What shifts is
+ * what they want and who pays for it, not whether their adjectives are nice.
+ */
+export async function generateCharacter(
+  alignment = 50
+): Promise<GeneratedCharacter | null> {
   try {
-    const response = await trackedFetch(API_URL + '/agents/generate', {
+    const response = await trackedFetch(API_URL + '/agents/generate?alignment=' + alignment, {
       method: 'POST',
       headers: {
         Accept: 'application.json',
