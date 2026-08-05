@@ -83,6 +83,21 @@ public class SimulationService {
     private static final Duration CONVERSATION_FLOOR = Duration.ofMinutes(20);
 
     /**
+     * The floor, but never shorter than a couple of ticks.
+     * <p>
+     * Its whole job is to stop one room producing a conversation on
+     * consecutive ticks, and a fixed twenty minutes stops doing that the moment
+     * the timestep reaches twenty minutes - every tick then clears it exactly,
+     * and the floor is silently inert. Expressing it in ticks as well as
+     * minutes means it keeps working whatever the timestep is set to.
+     */
+    private static Duration conversationFloor() {
+	Duration twoTicks = SimulationTime.getStepDuration().multipliedBy(2);
+
+	return twoTicks.compareTo(CONVERSATION_FLOOR) > 0 ? twoTicks : CONVERSATION_FLOOR;
+    }
+
+    /**
      * Seeded from {@link Settings#getSeed()} so a run can be replayed when
      * working out why a particular conversation happened. Bare Math.random()
      * and an unseeded shuffle made that impossible.
@@ -869,7 +884,7 @@ public class SimulationService {
 	    // a fresh conversation on consecutive ticks.
 	    LocalDateTime lastTime = lastConversationAt.get(location);
 
-	    if (lastTime != null && Duration.between(lastTime, now).compareTo(CONVERSATION_FLOOR) < 0) {
+	    if (lastTime != null && Duration.between(lastTime, now).compareTo(conversationFloor()) < 0) {
 		continue;
 	    }
 
