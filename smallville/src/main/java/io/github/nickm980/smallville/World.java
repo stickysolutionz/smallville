@@ -98,6 +98,9 @@ public class World {
 
 	for (Agent agent : agents.all()) {
 	    agent.getMemoryStream().clearDiary();
+	    // Otherwise a timestamp from the wiped run survives, and an agent
+	    // with no memories at all is treated as having recently reflected.
+	    agent.getMemoryStream().setLastReflectedAt(null);
 	    agent.setCurrentActivity("idle");
 	}
     }

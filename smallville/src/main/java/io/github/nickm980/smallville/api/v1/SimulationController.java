@@ -348,7 +348,12 @@ public final class SimulationController {
 
     @Post("/simulation/reset")
     public void resetSimulation(Context ctx) {
-	service.resetSimulationData();
+	// Noon by default. A town that restarts at three in the morning spends
+	// its first stretch asleep.
+	String startAt = ctx.queryParam("startAt");
+
+	service.resetSimulationData(startAt == null || startAt.isBlank() ? java.time.LocalTime.NOON
+		: java.time.LocalTime.parse(startAt));
 	ctx.json(Map.of("success", true));
     }
 

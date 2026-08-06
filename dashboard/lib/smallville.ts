@@ -463,9 +463,13 @@ export async function setTimestep(minutes: number) {
   }
 }
 
-export async function resetSimulation() {
+/**
+ * @param startAt clock time the town restarts at, as HH:mm. Noon by default -
+ * a town that restarts at three in the morning spends its first stretch asleep.
+ */
+export async function resetSimulation(startAt = '12:00') {
   try {
-    const response = await trackedFetch(API_URL + '/simulation/reset', {
+    const response = await trackedFetch(API_URL + '/simulation/reset?startAt=' + startAt, {
       method: 'POST',
       cache: 'no-store'
     });

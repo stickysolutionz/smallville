@@ -2,6 +2,8 @@ package io.github.nickm980.smallville;
 
 import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.time.LocalDateTime;
@@ -12,7 +14,9 @@ import org.junit.jupiter.api.Test;
 
 import io.github.nickm980.smallville.entities.Conversation;
 import io.github.nickm980.smallville.entities.Dialog;
+import io.github.nickm980.smallville.entities.Agent;
 import io.github.nickm980.smallville.entities.Location;
+import io.github.nickm980.smallville.memory.Characteristic;
 import io.github.nickm980.smallville.entities.SimulationTime;
 import io.github.nickm980.smallville.exceptions.SmallvilleException;
 
@@ -54,6 +58,25 @@ public class WorldTest {
 	assertThrows(Exception.class, () -> {
 	    world.setState(null, null);
 	});
+    }
+
+    @Test
+    public void resetting_clears_when_each_agent_last_reflected() {
+	// Otherwise a timestamp from the wiped run survives, and an agent with
+	// no memories at all is treated as having recently reflected - so they
+	// go quiet for hours after a reset.
+	Location cottage = new Location("Cottage");
+	world.create(cottage);
+
+	Agent maria = new Agent("Maria Lopez", List.of(new Characteristic("Maria lives here")), "idle", cottage);
+	maria.getMemoryStream().markReflected();
+	world.create(maria);
+
+	assertNotNull(maria.getMemoryStream().getLastReflectedAt());
+
+	world.resetSimulationData();
+
+	assertNull(world.getAgent("Maria Lopez").orElseThrow().getMemoryStream().getLastReflectedAt());
     }
 
     @Test

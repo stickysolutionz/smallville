@@ -90,6 +90,9 @@ export default function SimulationControls() {
   const [status, setStatus] = useState<SimulationStatus | null>(null);
   const [intervalInput, setIntervalInput] = useState('15');
   const [stepMinutes, setStepMinutes] = useState<number>(20);
+  // Noon by default. A town that restarts at three in the morning spends its
+  // first stretch asleep with nothing to watch.
+  const [resetStartAt, setResetStartAt] = useState('12:00');
   const [isPending, setPending] = useState(false);
   const [isResetting, setResetting] = useState(false);
   const initialized = useRef(false);
@@ -154,7 +157,7 @@ export default function SimulationControls() {
     }
 
     setResetting(true);
-    await resetSimulation();
+    await resetSimulation(resetStartAt);
     await refreshStatus();
     router.refresh();
     setResetting(false);
@@ -224,7 +227,18 @@ export default function SimulationControls() {
         </Text>
       )}
 
-      <Flex justifyContent="end" className="mt-6">
+      <Flex justifyContent="end" alignItems="center" className="mt-6 gap-3">
+        <label className="text-sm text-gray-500">
+          Restart the day at
+          <input
+            type="time"
+            value={resetStartAt}
+            disabled={isResetting}
+            className="ml-2 h-8 rounded-md border border-gray-200 px-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500 disabled:opacity-50"
+            onChange={(e) => setResetStartAt(e.target.value || '12:00')}
+          />
+        </label>
+
         <Button
           size="xs"
           variant="secondary"

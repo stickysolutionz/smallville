@@ -1,7 +1,9 @@
 package io.github.nickm980.smallville.api.v1;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -676,8 +678,13 @@ public class SimulationService {
 
     // Wipes conversations, every agent's diary, and the generated story -
     // agents, locations, and simulation timing/state are left untouched.
-    public void resetSimulationData() {
+    public void resetSimulationData(LocalTime startAt) {
 	exclusively(() -> {
+	    // The clock restarts too. Left alone, a wiped town carried on from
+	    // whatever hour the previous run happened to reach - usually the
+	    // small hours, where everyone is asleep and nothing happens for the
+	    // first real half hour of watching.
+	    SimulationTime.setSimulationTime(LocalDateTime.of(LocalDate.now(), startAt));
 	    world.resetSimulationData();
 	    storyStore.clear();
 	    worldStore.clear();
@@ -686,6 +693,8 @@ public class SimulationService {
 	    // reads as the reset having broken conversations.
 	    lastConversationAt.clear();
 	});
+
+	LOG.info("Simulation reset, starting again at " + startAt);
     }
 
     public List<Map<String, Object>> getCharacteristics(String name) {
