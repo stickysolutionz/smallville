@@ -47,7 +47,11 @@ export default function LocationsPage(props: any) {
       </Flex>
       <Grid numItemsSm={1} numItemsLg={2} className="gap-6 mt-6">
         <Card>
-          <LocationsTable locations={data.locations}></LocationsTable>
+          <LocationsTable
+            locations={data.locations}
+            onImageUploaded={fetchData}
+            onDeleted={fetchData}
+          ></LocationsTable>
         </Card>
         <Card key={'Visit Frequency'}>
           <LocationVisitsChart data={data.analytics.locationVisits}></LocationVisitsChart>

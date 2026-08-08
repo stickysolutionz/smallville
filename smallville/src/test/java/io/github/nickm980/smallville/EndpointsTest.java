@@ -11,6 +11,7 @@ import org.mockito.Mockito;
 
 import io.github.nickm980.smallville.analytics.Analytics;
 import io.github.nickm980.smallville.api.SmallvilleServer;
+import io.github.nickm980.smallville.entities.SimulationTime;
 import io.github.nickm980.smallville.llm.ChatGPT;
 import io.javalin.Javalin;
 import io.javalin.community.routing.annotations.Get;
@@ -65,7 +66,10 @@ public class EndpointsTest {
 	    JSONObject body = new JSONObject(response.body().string());
 
 	    assertEquals(response.code(), 200);
-	    assertEquals(body.get("step"), 1);
+	    // The timestep is fixed. Too much depends on it - the gap between
+	    // conversations, how many ticks a plan spans, how often a day rolls
+	    // over - for it to be something anyone adjusts by accident.
+	    assertEquals((int) SimulationTime.STEP.toMinutes(), body.get("step"));
 	    assertNotNull(body.get("step"));
 	    assertNotNull(body.get("locationVisits"));
 	    assertNotNull(body.get("prompts"));

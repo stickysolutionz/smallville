@@ -72,6 +72,30 @@ public class PromptBuilderTest {
 	assertEquals("name", getKey(result, "agent.name"));
     }
 
+    @Test
+    public void substituted_values_are_not_html_escaped() {
+	// Mustache escapes by default, which corrupted every prompt carrying an
+	// apostrophe, quote or ampersand - exactly what diary text and dialogue
+	// are made of. A model reading "Klaus&#39;s room" is being handed
+	// noise.
+	String template = "{{value}}";
+	String awkward = "Klaus's \"room\" & the tavern";
+
+	PromptRequest prompt = new PromptBuilder().with("value", awkward).setPrompt(template).build();
+
+	assertEquals(awkward, prompt.build().get("content"));
+    }
+
+    @Test
+    public void newlines_in_substituted_values_survive() {
+	PromptRequest prompt = new PromptBuilder()
+	    .with("value", "first line\nsecond line")
+	    .setPrompt("{{value}}")
+	    .build();
+
+	assertEquals("first line\nsecond line", prompt.build().get("content"));
+    }
+
     private String getKey(String s, String key) {
 	String result = "";
 

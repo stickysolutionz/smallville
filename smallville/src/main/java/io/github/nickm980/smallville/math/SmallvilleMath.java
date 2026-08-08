@@ -98,6 +98,17 @@ public final class SmallvilleMath {
 	return getBert().embedTokens(input);
     }
 
+    /**
+     * Cosine similarity, rescaled so that the band BERT actually uses becomes
+     * the full 0-1 range.
+     * <p>
+     * Averaged BERT embeddings of short sentences cluster high - unrelated
+     * text still sits around 0.8 - so raw cosine barely separates anything.
+     * The rescale spreads that band out, but it previously ran unclamped, so
+     * every pair below the floor came back negative and unbounded: a memory
+     * with nothing to do with the query scored -1.5 rather than 0, dragging
+     * the combined retrieval score around arbitrarily.
+     */
     public static double cosineSimilarity(float[] vec1, float[] vec2) {
 	double dotProduct = 0.0;
 	double norm1 = 0.0;
@@ -107,7 +118,20 @@ public final class SmallvilleMath {
 	    norm1 += vec1[i] * vec1[i];
 	    norm2 += vec2[i] * vec2[i];
 	}
-	double cosineSimilarity = dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
-	return normalize(cosineSimilarity, 1, .8);
+
+	double magnitude = Math.sqrt(norm1) * Math.sqrt(norm2);
+
+	if (magnitude == 0) {
+	    return 0;
+	}
+
+	double similarity = normalize(dotProduct / magnitude, 1, SIMILARITY_FLOOR);
+
+	return Math.max(0, Math.min(1, similarity));
     }
+
+    /**
+     * Cosine values at or below this are treated as no match at all.
+     */
+    private static final double SIMILARITY_FLOOR = .8;
 }

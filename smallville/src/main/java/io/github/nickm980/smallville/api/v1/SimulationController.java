@@ -120,8 +120,22 @@ public final class SimulationController {
 
     @Post("/agents/generate")
     public void generateCharacter(Context ctx) {
-	GeneratedCharacterResponse result = service.generateCharacter();
+	// 0 is the worst person in town, 100 the best. Defaults to the middle,
+	// which is where most people are.
+	String alignment = ctx.queryParam("alignment");
+	GeneratedCharacterResponse result = service
+	    .generateCharacter(alignment == null ? 50 : Double.parseDouble(alignment));
 	ctx.json(result);
+    }
+
+    @Get("/story")
+    public void getStory(Context ctx) {
+	ctx.json(service.getStory());
+    }
+
+    @Post("/story/generate")
+    public void generateStory(Context ctx) {
+	ctx.json(service.generateStory());
     }
 
     @Post("/agents")
@@ -185,6 +199,12 @@ public final class SimulationController {
 	ctx.json(Map.of("success", true));
     }
 
+    @Delete("/locations/{name}")
+    public void deleteLocation(Context ctx) {
+	service.deleteLocation(ctx.pathParam("name"));
+	ctx.json(Map.of("success", true));
+    }
+
     @Post("/locations/{name}")
     public void changeLocationState(Context ctx) throws JsonMappingException, JsonProcessingException {
 	String location = ctx.pathParam("name");
@@ -195,6 +215,51 @@ public final class SimulationController {
 
 	service.setState(location, state);
 	ctx.json(Map.of("success", true));
+    }
+
+    private static final java.util.Set<String> ALLOWED_IMAGE_TYPES = java.util.Set
+	.of("image/png", "image/jpeg", "image/webp");
+    private static final long MAX_IMAGE_BYTES = 5_000_000L;
+
+    @Post("/locations/{name}/image")
+    public void uploadLocationImage(Context ctx) throws java.io.IOException {
+	String name = ctx.pathParam("name");
+	io.javalin.http.UploadedFile file = ctx.uploadedFile("image");
+
+	if (file == null) {
+	    ctx.status(400).json(Map.of("success", false, "message", "No image file provided"));
+	    return;
+	}
+
+	if (!ALLOWED_IMAGE_TYPES.contains(file.contentType())) {
+	    ctx.status(415).json(Map.of("success", false, "message", "Only PNG, JPEG, or WebP images are allowed"));
+	    return;
+	}
+
+	byte[] bytes = file.content().readAllBytes();
+
+	if (bytes.length > MAX_IMAGE_BYTES) {
+	    ctx.status(413).json(Map.of("success", false, "message", "Image must be under 5MB"));
+	    return;
+	}
+
+	service.saveLocationImage(name, bytes, file.contentType());
+	ctx.json(Map.of("success", true, "imageUrl", "/locations/" + name + "/image"));
+    }
+
+    @Get("/locations/{name}/image")
+    public void getLocationImage(Context ctx) {
+	String name = ctx.pathParam("name");
+	var meta = service.findLocationImage(name);
+	var bytes = service.readLocationImageBytes(name);
+
+	if (meta.isEmpty() || bytes.isEmpty()) {
+	    ctx.status(404);
+	    return;
+	}
+
+	ctx.contentType(meta.get().getContentType());
+	ctx.result(bytes.get());
     }
 
     @Get("/locations")
@@ -268,6 +333,28 @@ public final class SimulationController {
     public void stopSimulation(Context ctx) {
 	runner.stop();
 	ctx.json(Map.of("success", true, "running", runner.isRunning()));
+    }
+
+    @Get("/usage")
+    public void getUsage(Context ctx) {
+	ctx.json(io.github.nickm980.smallville.llm.UsageTracker.snapshot());
+    }
+
+    @Post("/usage/reset")
+    public void resetUsage(Context ctx) {
+	io.github.nickm980.smallville.llm.UsageTracker.reset();
+	ctx.json(Map.of("success", true));
+    }
+
+    @Post("/simulation/reset")
+    public void resetSimulation(Context ctx) {
+	// Noon by default. A town that restarts at three in the morning spends
+	// its first stretch asleep.
+	String startAt = ctx.queryParam("startAt");
+
+	service.resetSimulationData(startAt == null || startAt.isBlank() ? java.time.LocalTime.NOON
+		: java.time.LocalTime.parse(startAt));
+	ctx.json(Map.of("success", true));
     }
 
     @Get("/simulation/status")

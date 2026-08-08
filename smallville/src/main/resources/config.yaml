@@ -2,14 +2,69 @@
 apiPath: https://api.deepseek.com/chat/completions
 # LLM model should support function calling
 model: deepseek-v4-pro
+# Model for the calls that are really classification rather than creative work
+# - ranking memories, choosing an activity, judging the tone of a conversation.
+# Roughly a third the price. Leave blank to send everything to `model`.
+cheapModel: deepseek-v4-flash
+
+# Thinking mode. Reasoning tokens are billed as output, and very little of what
+# this app asks for benefits from deliberation - a six line daily plan has been
+# seen carrying several hundred tokens of it. Leave blank to send nothing and
+# accept the model's default. Set to "disabled" to try switching it off, then
+# check /usage: if reasoningTokens drops to zero it took effect.
+thinking: disabled
+
+# Prices per million tokens, used only to estimate cost on /usage. Update these
+# if DeepSeek's pricing changes. Note that prices double during peak hours
+# (09:00-12:00 and 14:00-18:00 Beijing time), which this does not model.
+inputPricePerMillion: 0.435
+cachedInputPricePerMillion: 0.003625
+outputPricePerMillion: 0.87
 timeFormat: h:mm a
 fullTimeFormat: EEEE, MMMM d, h:mm a
 yesterdayFormat: EEEE MMMM d
-#The weighted sum of recent memories to trigger a reflection. This value
-#depends on how many memories are added each time step and should only be
-#triggered 3-5 times per simulated day
-reflectionCutoff: 50
+# How much new weight must build up since an agent last reflected before they
+# reflect again. Self-limiting by construction: reflecting resets it to nothing.
+#
+# The previous measure summed a sliding window of recent memories, which grows
+# without bound - a value tuned to fire on 9% of updates fired on 57% a day
+# later. There is also a hard floor of a few simulated hours between
+# reflections in UpdateReflection, because this depends on importance scores
+# that come back from another model call and are sometimes not parsed at all.
+reflectionCutoff: 150
+
+# How often something from outside the town lands on somebody, per simulated day,
+# across the whole town - a phone call from family, a letter, a wallet on the
+# pavement. This is the only thing in the simulation that creates pressure the
+# agents did not choose. Rare on purpose. Set to 0 to switch it off.
+eventsPerSimulatedDay: 2.5
+
+# How the three kinds of news are mixed, as relative weights. Bad leads on
+# purpose - good news is a moment, bad news is a problem that persists, and
+# something unreadable is a problem that has not arrived yet. Even odds would
+# make a town where nothing much is ever at stake.
+#
+# The simulation rolls this and tells the model what to write. Left to the
+# model, the mix is whatever it happens to lean toward, which is neither
+# knowable nor adjustable.
+badEventWeight: 45
+ambiguousEventWeight: 30
+goodEventWeight: 25
 #Set to true if the simulation.yaml file should be used to initialize the simulation
 simulationFile: false
 # How many times ChatGPT should attempt to send a prompt before aborting
 maxRetries: 2
+
+# Memory retrieval. A memory is scored as the weighted sum of how recent, how
+# important and how relevant it is, each bounded to 0-1 first.
+#
+# How long, in SIMULATED hours, before a memory counts as half as recent.
+recencyHalfLifeHours: 8
+# How many memories to feed into a prompt as "relevant memories".
+retrievalCount: 3
+# Relative pull of each component. Raise relevanceWeight to make agents more
+# single-minded about the topic at hand; raise recencyWeight to make them more
+# reactive to what just happened.
+recencyWeight: 1.0
+importanceWeight: 1.0
+relevanceWeight: 1.0

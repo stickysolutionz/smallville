@@ -4,23 +4,19 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-import io.github.nickm980.smallville.exceptions.SmallvilleException;
-
 public class Conversation {
 
     private List<Dialog> messages;
-    private String agent;
-    private String other;
+    private List<String> participants;
     private LocalDateTime time;
 
-    public Conversation(String agent, String other, List<Dialog> messages) {
-	this(agent, other, messages, SimulationTime.now());
+    public Conversation(List<String> participants, List<Dialog> messages) {
+	this(participants, messages, SimulationTime.now());
     }
 
-    public Conversation(String agent, String other, List<Dialog> messages, LocalDateTime time) {
+    public Conversation(List<String> participants, List<Dialog> messages, LocalDateTime time) {
 	this.messages = new ArrayList<Dialog>();
-	this.agent = agent;
-	this.other = other;
+	this.participants = participants;
 	this.messages = messages;
 	this.time = time;
     }
@@ -33,19 +29,11 @@ public class Conversation {
 	return messages;
     }
 
-    public boolean isPartOfConversation(String name) {
-	return agent.equals(name) || other.equals(name);
-    }
-    
-    public int size() {
-	return messages.size();
+    public List<String> getParticipants() {
+	return participants;
     }
 
-    public String getTalker() {
-	return agent;
-    }
-    
-    public String getTalkee() {
-	return other;
+    public int size() {
+	return messages.size();
     }
 }

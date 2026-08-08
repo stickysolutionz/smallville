@@ -1,16 +1,85 @@
 reactions:
+  # Both conversation prompts ask for json. The previous free-text form asked
+  # for "A: line" and the model sometimes answered with narrative prose
+  # instead - a scene with the speech embedded in it - which parsed to zero
+  # lines and threw the whole conversation away.
   conversation: |
+    Write a short, believable conversation between two people who are together right now.
+
+    Respond with only a json object, in exactly this shape:
+    {"lines": [{"speaker": "First Last", "text": "what they say"}]}
+
+    * "speaker" must be exactly one of the two names given below.
+    * "text" is only what that person says out loud - no stage directions, no
+      description of the room, no narration.
+    * 4 to 8 lines, alternating naturally.
+
+    Each description below is that person's own inner life, not shared knowledge.
+    Write them true to it, but they only know about each other what is listed
+    under what they know. Do not invent a shared past to explain knowing
+    something - if they have not met, they are meeting now.
+
+    ---
     {{agent.summary}}
     {{other.summary}}
 
-    Create a fake conversation between {{agent.name}} and {{other.name}}
+    They are at: {{location}}
+
+    What they actually know about each other:
+    {{history}}
+
     Topic: {{observation}}
 
-    For example, a conversation between people named A and B would look like this
+  groupConversation: |
+    Write a natural, believable conversation among a group of people who are all together right now.
 
-    A: Hello, how are you today?
-    B: I am good, and you?
-    
+    Respond with only a json object, in exactly this shape:
+    {"lines": [{"speaker": "First Last", "text": "what they say"}]}
+
+    * "speaker" must be exactly one of the names listed below, written the same way.
+    * "text" is only what that person says out loud - no stage directions, no
+      description of the setting, no narration between the lines.
+    * 5 to 12 lines. Not everyone has to speak every line, but everyone should
+      say something if it would be natural. People can answer each other, push
+      back, or change the subject.
+    * Their history below should colour how they speak to each other - warmer and
+      more familiar, or shorter and more guarded - but keep it as spoken lines.
+
+    Each person's description below is their own inner life. Write them true to
+    it - but it is not shared knowledge:
+
+    * They only know about each other what is listed under "What they actually
+      know about each other". Nothing else. Somebody's private business, their
+      history, what they do when nobody is looking - none of that is known to
+      the others unless it is written there.
+    * Do not invent a shared past to explain knowing something. If they have not
+      met, they are meeting now, and they behave like it.
+    * A person can be guarded about their own business, or hint at it, or lie
+      about it. They cannot be read like a file by somebody who just met them.
+
+    ---
+    People present:
+    {{agent.name}}: {{agent.description}}
+    {{#others}}
+    {{name}}: {{description}}
+    {{/others}}
+
+    They are at: {{location}}
+
+    What they actually know about each other:
+    {{history}}
+
+    Topic: {{observation}}
+
+  conversationTone: |
+    Here is a conversation that just took place:
+
+    {{transcript}}
+
+    How did it leave the people in it feeling about each other?
+
+    Answer with exactly one word and nothing else: warm, neutral, or tense.
+
   say: |
     {{agent.summary}}
     
@@ -66,44 +135,139 @@ world:
     Shower: On
 
 plans:
+  # Invariant instructions first, volatile state last - see the note on
+  # longTerm below for why the ordering matters.
   shortTerm: |
+    You are deciding what one resident of a small town is setting out to do next.
+
+    Respond with only a json object, in exactly this shape:
+    {"plans": [{"time": "9:00 am", "location": "Red House: Kitchen", "activity": "making coffee and waking up properly"}]}
+
+    * "time" must be a clock time like "9:00 am".
+    * "location" must be one of the available locations, written exactly as given below.
+    * "activity" is what they are settling into doing there.
+    * One or two entries for the next hour. Not a minute-by-minute breakdown -
+      an hour of someone's life is usually one or two things, and the rest is
+      the detail of living them.
+
+    This is an intention, not a script of what happens:
+
+    * No outcomes. "Look for the cat food" - not "find the cat food and pay for it".
+    * No reactions. Nobody can intend to laugh at a joke, reply to someone, agree,
+      argue, or join a conversation. Those need something to have happened first.
+    * No other people doing things with them. "Head over to the tavern where Bill
+      usually is" is fine. "Chat with Bill" is not - it assumes Bill is willing.
+
+    ---
+    Everything below is specific to right now and to this resident.
+
     {{world.description}}
     {{agent.summary}}
-    Daily Requirement: {{#agent.plans}}{{description}};{{/agent.plans}}
+    What they want out of today: {{#agent.plans}}{{description}}; {{/agent.plans}}
+    Still outstanding: {{outstandingGoals}}
     Relevant Memories: {{#memories.relevant}}{{description}}; {{/memories.relevant}}
+    On their mind, from outside the town: {{agent.concerns}}
     Observation: {{observation}}
-    
-    * Give a duration for every plan
-    
-    Break down {{agent.name}}'s plan for the next hour starting at the current time.
 
-    The current time is {{date.time}}
+    It is {{date.time}}. Given where {{agent.name}} is and what is going on around
+    them right now, what are they setting out to do next?
 
+  # Everything invariant is deliberately FIRST and everything that changes per
+  # agent and per tick is LAST. DeepSeek's context cache matches on prefixes,
+  # and cached input costs a small fraction of fresh input. With the volatile
+  # world description at the top - as this prompt used to have it - the ~1500
+  # tokens of examples below could never be reused between calls, because the
+  # prefix differed every time.
   longTerm: |
+    You are writing what one resident of a small town means to get out of today.
+
+    These are intentions, not a schedule. A person wakes up wanting a handful of
+    things - to work, to pick up something they need, to see somebody, to let
+    loose. They do not wake up knowing what will happen.
+
+    Respond with only a json object, in exactly this shape:
+    {"plans": [{"when": "morning", "location": "Red House: Kitchen", "intent": "open the shop and get through the deliveries"}]}
+
+    * "when" is one of: early morning, morning, midday, afternoon, evening, night.
+    * "location" must be one of the available locations, written exactly as given
+      below. Where someone means to be is what makes them run into other people.
+    * "intent" is what they want out of it, in a few words.
+    * 4 to 6 of them, in the order they would come up. Include sleeping.
+
+    Write only what the resident wants. Never write what happens:
+
+    * No outcomes. Not "sell the eggs and make a good profit" - just "sell the eggs".
+    * No reactions. Nobody can intend to laugh at a joke, reply to someone, agree,
+      argue, or join a conversation. Those need something to have happened first.
+    * No other people doing things with them. "Go to the tavern hoping to see
+      Bill" is a want. "Have a drink with Bill" assumes Bill turns up.
+
+    A good one, for a shopkeeper:
+
+    {"plans": [
+      {"when": "early morning", "location": "Red House: Bedroom", "intent": "wake up slowly, not looking forward to the day"},
+      {"when": "morning", "location": "Market: Stalls", "intent": "open up and get through the deliveries"},
+      {"when": "midday", "location": "Hobbs Cafe", "intent": "get lunch and a break from the counter"},
+      {"when": "afternoon", "location": "Market: Stalls", "intent": "back to the shop, hoping it is quieter"},
+      {"when": "evening", "location": "The Tavern", "intent": "unwind, and see who is about"},
+      {"when": "night", "location": "Red House: Bedroom", "intent": "sleep"}
+    ]}
+
+    ---
+    Everything below is specific to today and to this resident.
+
     {{world.description}}
     {{agent.summary}}
     Relevant Memories: {{#memories.relevant}}{{description}}; {{/memories.relevant}}
     Observation ({{date.time}}): {{observation}}
 
-    * Only use the available locations
-    * Include the time {{agent.name}} wake's up and falls asleep
+    On their mind, from outside the town: {{agent.concerns}}
 
-    Example of a plan: 
-    8:00 am at the Oak Hill College Dorm: Klaus Mueller's room: bed, wake up and get ready for school;
-    9:00 am at the Oak Hill College Dorm: Klaus Mueller's room: desk, read and take notes for research paper;
-    5:00 pm at the Oak Hill College Dorm: Kitchen, get ready for dinner
-    10:00 am at the Oak Hill College Dorm: Klaus Mueller's room: bathroom, get ready for bed
+    If something is weighing on them, today should show it - what they mean to do
+    is shaped by it, even if there is nothing they can actually do about it.
 
-    Today is Wednesday February 13. Here is {{agent.name}}'s
-    plan today in broad strokes:
+    It is currently {{date.full}}. What does {{agent.name}} want out of today?
 
   current: |
     {{world.description}}
     Schedule: {{#agent.shortPlans}}{{description}}; {{/agent.shortPlans}}
 
     * The location should always include a leaf location or object chosen from the available locations
-    * The lines above starting with another person's name state where that person actually is right now - this is ground truth.
-    * If your schedule mentions doing something with another named person, only describe them as present if the ground truth above confirms they are at your same location right now. Otherwise, describe yourself doing the activity alone or improvising, and do not claim they are with you.
+    * Where each other person is, above, comes from the world itself and is fact.
+    * Describe ONLY what you yourself are doing. Do not name another person in your
+      activity and do not describe anything you are doing together with them - no
+      talking with, laughing with, joining, replying, agreeing, arguing. Those are
+      things that can only be true after they have actually happened, and something
+      else in this world decides whether they did.
+    * You can be doing something near other people, or on your way to them, or looking
+      for them. You just cannot report an exchange that has already taken place.
+    * Equally, do not insist you are alone or doing something "by yourself" when other
+      people are listed above as being where you are. Say what you are doing and leave
+      the company out of it either way.
+    * Do what YOU would be doing. Other people being nearby is not a reason to be doing
+      the same thing as them.
+
+    On your mind, from outside this town: {{agent.concerns}}
+
+    * If something is weighing on you it colours what you do, but you still have a
+      day to get through. People carry things quietly.
+
+    What you have been doing, oldest first: {{agent.recentActivities}}
+    A moment ago you were: {{agent.lastActivity}}
+    You have been on this stretch of the day for about {{minutesOnThis}} minutes.
+
+    * Time has passed. If you were already doing that, you are further along now,
+      or finished, or on to the next thing - a person does not spend an hour
+      unlacing one shoe. Move it forward rather than describing the same instant
+      again.
+    * Look at the list above. If you are going back and forth between the same
+      couple of things, stop - nobody alternates between dancing and fetching
+      water for an hour. Either commit to one of them properly, take it somewhere
+      new, or be finished with it and do something else.
+    * The longer you have been on this stretch, the more it should be reaching an
+      end rather than starting over.
+    * If the schedule still fits, stay with it and progress within it. Only jump to
+      something else if what is going on around you gives you a reason to.
 
     What is your activity at {{date.time}}?
 
@@ -191,3 +355,158 @@ misc:
     agent.memories: {{#agent.memories}}{{description}}; {{/agent.memories}}
     agent.name: {{agent.name}}
     agent.plansBlock: {{agent.plansBlock}}
+story:
+  first: |
+    You are narrating the story of a small town for a life simulation game, based on real events from a simulation, not fiction you invent.
+
+    The only real residents of this town are: {{roster}}
+    Do not introduce, name, or refer to any person who is not on this list. Every character in the recap must be one of these people.
+
+    The current in-world date and time is: {{now}}
+    The material below covers {{span}}. Do not describe it as spanning more time
+    than that - it is a record of exactly that stretch, no longer.
+    Everything below happened on or before this date and time. Do not invent an earlier scene, a different day, or a "meanwhile, earlier that week" flashback that isn't directly supported by the material below - if something isn't given below, it did not happen and must not appear.
+
+    Here is what has happened so far, drawn from each resident's diary:
+
+    {{diary}}
+
+    Here are the conversations that took place:
+
+    {{conversations}}
+
+    Write a clear, engaging prose recap of what has happened, in past tense, third person, like a narrator catching a reader up on a story. Prioritize what actually happened and what people said over describing scenery, weather, or mood - a touch of atmosphere is fine, but don't let it crowd out the events. If a stretch had little or nothing happen, say so briefly rather than inventing scene-setting to fill the space. Keep it only as long as the material actually warrants - do not pad it out. Only use what is given above - do not invent characters, events, locations, or details that are not directly supported by this material, and do not repurpose a real conversation into a different day or a different set of participants than it actually happened with. You can mention the current in-world time naturally if it's useful, but do not end with a formal paragraph summarizing where everyone stands.
+
+  continuation: |
+    You are continuing the story of a small town for a life simulation game, based on real new events from a simulation, not fiction you invent.
+
+    The only real residents of this town are: {{roster}}
+    Do not introduce, name, or refer to any person who is not on this list. Every character in this passage must be one of these people.
+
+    STORY SO FAR (already written and established - do not restate, summarize, or rewrite any of this, it is here only so you understand the tone and continuity):
+    {{storySoFar}}
+
+    The current in-world date and time is: {{now}}
+    The new material below covers {{span}}. Do not describe it as spanning more
+    time than that.
+    The new material below happened on or before this date and time. Do not invent an earlier scene, a different day, or a "meanwhile, earlier" flashback that isn't directly supported by the material below - if something isn't given below or in the story so far, it did not happen and must not appear.
+
+    Here is what is NEW since the story above was last updated, drawn from each resident's diary:
+
+    {{diary}}
+
+    Here are the new conversations that took place:
+
+    {{conversations}}
+
+    Write ONLY the next passage of the story, continuing directly from where it left off, in the same voice and tense. Prioritize what actually happened and what people said over describing scenery, weather, or mood - a touch of atmosphere is fine, but don't let it crowd out the events, and don't re-describe light, weather, or setting you've already established recently. If this stretch had little or nothing happen, say so briefly in a sentence or two rather than inventing a full scene to fill the space. Keep the length proportional to how much actually happened - do not pad it out. Do not include a heading or any re-summary of what came before. Only use what is given above as new material - do not invent events, locations, or details that are not directly supported by this material, do not repurpose a real conversation into a different day or a different set of participants than it actually happened with, and do not contradict anything already established. You can mention the current in-world time naturally if it's useful, but do not end with a formal paragraph summarizing where everyone stands.
+
+  compact: |
+    Below is a running summary of a town's story, followed by later passages of that story that are not yet covered by it.
+
+    Existing summary (may be empty if this is the first time):
+    {{summary}}
+
+    Passages to fold in:
+    {{passages}}
+
+    Rewrite the summary so it covers the existing summary AND the new passages together, as one continuous account.
+
+    This summary is not shown to readers. It exists so a narrator can continue the story without being given every earlier passage in full, so it must preserve what a writer would need for continuity: who these people are to each other, what has actually happened between them, unresolved threads, and anything established that later passages must not contradict.
+
+    Write plain past-tense prose, no headings or bullet points. Be compact - aim for a few paragraphs at most - but never drop a named person or a concrete event just to save room. Do not invent anything that is not in the material above.
+
+  generateCharacter: |
+    Invent one resident of a small American town for a life simulation.
+
+    Respond with only a json object, in exactly this shape:
+    {"name": "First Last",
+     "anchor": "Runs the auto shop on Main, open by seven, closed by six",
+     "want": "To buy the building before the landlord sells it out from under him",
+     "behavior": "Fixes things that are not broken when he has something on his mind",
+     "flaw": "Undercharges people he likes and cannot afford to",
+     "tie": "His brother co-signed the shop lease and has not spoken to him since",
+     "tell": "Wipes his hands on a rag long after they are clean"}
+
+    Each of the six does a specific job. Write one sentence for each.
+
+    * "anchor" - a job or routine that puts them somewhere at a predictable time.
+      This is the most important one. Where somebody means to be is what puts them
+      in a room with other people, and everything else in this town comes from
+      that. A character with no routine has no reason to leave the house.
+    * "want" - something they are chasing or avoiding that a single day will not
+      settle. Not a mood. Something with a shape.
+    * "behavior" - something they visibly DO. Not something they are. "Reheats the
+      same coffee four times" tells you more than "distracted", and the simulation
+      can act on the first and not the second.
+    * "flaw" - something that costs them, and that they do anyway.
+    * "tie" - one person off-screen: family, an ex, a creditor, somebody they owe
+      or avoid. Nobody who lives in the town.
+    * "tell" - something small and physical that another person could notice by
+      watching them. This one matters more than it looks: people here only learn
+      about each other by observation, so anything that never shows on the outside
+      can never be found out.
+
+    Rules:
+
+    * Never write an adjective where a verb will do. No "kind and generous", no
+      "highly analytical", no "above average intelligence" - none of those produce
+      anything at nine in the morning.
+    * No stats. Intelligence, strength and looks are not character.
+    * Ordinary and specific beats large and vague. Most people are not remarkable
+      and are interesting anyway.
+    * The name must not match or resemble any of these: {{existingNames}}
+
+    Who they are:
+    {{alignment}}
+
+  # Everything about a character has to be visible eventually or it may as well
+  # not exist - see the note on "tell" above.
+
+events:
+  # Nothing in this town is ever at stake on its own. This is where wanting
+  # comes from: a fact arrives from outside and the agent has to live with it.
+  # Deliberately states what happened and never what it means, for the same
+  # reason the plan prompts do - told how to feel, a model writes the reaction
+  # instead of letting the character have one.
+  generate: |
+    Invent one ordinary thing that just happened to somebody, from outside the small town they live in.
+
+    What kind of thing it should be, decided already:
+    {{valence}}
+
+    Respond with only a json object, in exactly this shape:
+    {"event": "Mom texted. Her car failed inspection, the repair is $1,200.",
+     "source": "family", "demand": "costly", "privacy": "private", "hours": 30}
+
+    * "source" is one of: family, friend, institution, chance.
+      - family is heaviest, an obligation that cannot be declined cleanly
+      - friend is real but refusable
+      - institution is a bank, landlord, employer, clinic, the county - impersonal, and you cannot argue with it
+      - chance is something they found, saw, or had happen in passing
+    * "demand" is one of: nothing, small, costly.
+    * "privacy" is one of: open, private, shameful.
+      - open, they would mention it to anyone; private, only to someone they trusted;
+        shameful, they would rather nobody knew.
+    * "hours" is how long this stays on their mind, between 4 and 48.
+
+    Writing it:
+
+    * State only what happened. Never how they feel about it, never what they should do.
+      "Mom texted, her car failed inspection" - not "Joan is worried about her mother".
+    * American, present day, specific. Dollar amounts, real places, actual sums.
+    * Most things that happen to people are small. A declined card, a package that
+      says delivered and is not there, somebody waving you ahead in line. Reserve
+      the heavy ones - keep most of these ordinary.
+    * A sting in the detail is worth more than a big event. "She didn't ask for
+      money, which is worse." "He never calls just to talk."
+    * It must fit where they are and what time it is. No letters at a nightclub,
+      no package deliveries at 3am.
+    * Nobody else in town may appear in it. These people are strangers to each
+      other, and someone's mother has no reason to have heard of them.
+
+    ---
+    This is about:
+    {{agent.summary}}
+
+    They are at {{location}}, and it is {{time}}.

@@ -13,12 +13,4 @@ public interface LLM {
      * @return chat response String
      */
     String sendChat(PromptRequest prompt, double temperature);
-
-    /**
-     * Pricing is $0.0004 / thousand tokens for embeddings.
-     * 
-     * @param input
-     * @return
-     */
-    float[] getTokenEmbeddings(String input);
 }

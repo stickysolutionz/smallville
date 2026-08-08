@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,6 +13,7 @@ import io.github.nickm980.smallville.entities.Agent;
 import io.github.nickm980.smallville.entities.Conversation;
 import io.github.nickm980.smallville.entities.Location;
 import io.github.nickm980.smallville.exceptions.SmallvilleException;
+import io.github.nickm980.smallville.relationships.RelationshipGraph;
 import io.github.nickm980.smallville.repository.Repository;
 
 /**
@@ -21,6 +23,7 @@ public class World {
     private Repository<Location> locations;
     private Repository<Conversation> conversations;
     private Repository<Agent> agents;
+    private final RelationshipGraph relationships = new RelationshipGraph();
     private final Logger LOG = LoggerFactory.getLogger(World.class);
 
     public World() {
@@ -29,13 +32,23 @@ public class World {
 	this.conversations = new Repository<>();
     }
 
+    public RelationshipGraph getRelationships() {
+	return relationships;
+    }
+
     public void create(Conversation conversation) {
 	if (conversation.size() == 0) {
 	    throw new SmallvilleException("Cannot have an empty conversation");
 	}
 
-	if (conversation.getTalker().equals(conversation.getTalkee())) {
-	    throw new SmallvilleException("Agents cannot have conversations with themselves");
+	List<String> participants = conversation.getParticipants();
+
+	if (participants.size() < 2) {
+	    throw new SmallvilleException("A conversation must have at least two participants");
+	}
+
+	if (new java.util.HashSet<>(participants).size() != participants.size()) {
+	    throw new SmallvilleException("A conversation cannot have duplicate participants");
 	}
 
 	conversations.save(UUID.randomUUID().toString(), conversation);
@@ -66,11 +79,46 @@ public class World {
     }
 
     public boolean deleteAgent(String name) {
+	relationships.removeAgent(name);
+
 	return agents.delete(name);
     }
 
+    public boolean deleteLocation(String name) {
+	return locations.delete(name);
+    }
+
+    /**
+     * Wipes all conversations and every agent's diary history, leaving
+     * agents (and their characteristics) and locations untouched.
+     */
+    public void resetSimulationData() {
+	conversations.clear();
+	relationships.clear();
+
+	for (Agent agent : agents.all()) {
+	    agent.getMemoryStream().clearDiary();
+	    // Otherwise a timestamp from the wiped run survives, and an agent
+	    // with no memories at all is treated as having recently reflected.
+	    agent.getMemoryStream().setLastReflectedAt(null);
+	    agent.setCurrentActivity("idle");
+	}
+    }
+
+    /**
+     * Conversations that started strictly after {@code time}.
+     * <p>
+     * This previously ignored its argument and returned every conversation
+     * ever recorded, so the caller asking for "conversations in the last
+     * timestep" was really re-serving the whole history on every dashboard
+     * poll.
+     */
     public List<Conversation> getConversationsAfter(LocalDateTime time) {
-	return conversations.all();
+	return conversations
+	    .all()
+	    .stream()
+	    .filter(conversation -> conversation.getTime() != null && conversation.getTime().isAfter(time))
+	    .collect(Collectors.toList());
     }
 
     public List<Conversation> getAllConversations() {

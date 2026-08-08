@@ -4,7 +4,17 @@ public class ReactionPrompts {
 
     private String reaction;
     private String conversation;
+    private String groupConversation;
+    private String conversationTone;
     private String say;
+
+    public String getConversationTone() {
+	return conversationTone;
+    }
+
+    public void setConversationTone(String conversationTone) {
+	this.conversationTone = conversationTone;
+    }
 
     public String getSay() {
 	return say;
@@ -28,5 +38,13 @@ public class ReactionPrompts {
 
     public void setConversation(String conversation) {
 	this.conversation = conversation;
+    }
+
+    public String getGroupConversation() {
+	return groupConversation;
+    }
+
+    public void setGroupConversation(String groupConversation) {
+	this.groupConversation = groupConversation;
     }
 }

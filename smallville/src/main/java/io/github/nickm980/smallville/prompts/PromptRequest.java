@@ -7,7 +7,9 @@ import java.util.Map;
 public abstract class PromptRequest {
     private String content;
     private String assistant;
-    private String function;
+    private boolean jsonResponse;
+    private boolean cheap;
+    private String label = "unlabelled";
 
     public PromptRequest(String content) {
 	this.content = content;
@@ -19,16 +21,48 @@ public abstract class PromptRequest {
 	this.assistant = assistant;
     }
 
-    public boolean isFunctional() {
-	return function != null && !function.isEmpty();
+    /**
+     * Whether the model should be constrained to return a JSON object.
+     * <p>
+     * Only set for prompts that actually ask for JSON - the API rejects the
+     * request if the word "json" never appears in the prompt itself.
+     */
+    public boolean isJsonResponse() {
+	return jsonResponse;
     }
 
-    public void setFunction(String function) {
-	this.function = function;
+    public PromptRequest asJsonResponse() {
+	this.jsonResponse = true;
+	return this;
     }
-   
-    public String getFunction() {
-	return function;
+
+    /**
+     * Which prompt this is, for the usage breakdown. Without it every call
+     * lands in one bucket and there is no way to tell which prompt is
+     * responsible for the bill.
+     */
+    public String getLabel() {
+	return label;
+    }
+
+    public PromptRequest labelled(String label) {
+	this.label = label;
+	return this;
+    }
+
+    /**
+     * Routes this call to the cheaper model. Suitable for the calls that are
+     * effectively classification - ranking memories, picking an activity,
+     * judging the tone of an exchange - rather than the ones doing the
+     * creative work.
+     */
+    public boolean isCheap() {
+	return cheap;
+    }
+
+    public PromptRequest asCheap() {
+	this.cheap = true;
+	return this;
     }
 
     public String getContent() {

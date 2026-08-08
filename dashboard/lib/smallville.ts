@@ -1,8 +1,75 @@
 import { User } from "../app/table";
 
+/**
+ * Base URL of the Java backend.
+ *
+ * Was hardcoded as a literal at two dozen call sites, which meant the
+ * dashboard could only ever talk to a backend on localhost:8080. Set
+ * NEXT_PUBLIC_API_URL to point it somewhere else.
+ */
+export const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080';
+
+/**
+ * Whether the last request to the backend succeeded.
+ *
+ * Every function here swallows its error and returns an empty result, so a
+ * backend that is down renders as a town where nothing is happening rather
+ * than as an error. Callers can subscribe to this to tell the difference.
+ */
+type ConnectionListener = (online: boolean) => void;
+
+const listeners = new Set<ConnectionListener>();
+let online = true;
+
+export function onConnectionChange(listener: ConnectionListener) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+export function isOnline() {
+  return online;
+}
+
+function setOnline(next: boolean) {
+  if (next === online) return;
+  online = next;
+  listeners.forEach((listener) => listener(next));
+}
+
+/**
+ * fetch, with the outcome recorded.
+ *
+ * A thrown fetch means the backend is unreachable; an HTTP error status means
+ * it answered, so only the former counts as being offline.
+ */
+async function trackedFetch(input: string, init?: RequestInit): Promise<Response> {
+  try {
+    // globalThis.fetch, not bare fetch: every other call in this file was
+    // rewritten from `fetch(` to `trackedFetch(` by a find and replace that
+    // also caught this line, turning the wrapper into infinite recursion.
+    // Qualifying it makes that substitution impossible to repeat.
+    const response = await globalThis.fetch(input, init);
+    setOnline(true);
+    return response;
+  } catch (error) {
+    setOnline(false);
+    throw error;
+  }
+}
+
+/** Marks the connection down and returns the caller's fallback. */
+function failed<T>(context: string, error: unknown, fallback: T): T {
+  setOnline(false);
+  console.error(`Error ${context}:`, error);
+  return fallback;
+}
+
 export async function getAgents() {
   try {
-    const response = await fetch('http://localhost:8080/agents', {cache: "no-store"}); // Replace with your actual server URL
+    const response = await trackedFetch(API_URL + '/agents', {cache: "no-store"}); // Replace with your actual server URL
     if (!response.ok) {
       throw new Error('Failed to fetch agents data.');
     }
@@ -12,8 +79,7 @@ export async function getAgents() {
 
     return result
   } catch (error) {
-    console.error('Error fetching agents data:');
-    return []
+    return failed('fetching agents data', error, []);
   }
 }
 
@@ -26,7 +92,7 @@ export interface SmallvilleAnalytics {
 
 export async function getInfo() {
   try {
-    const response = await fetch('http://localhost:8080/info', {cache: "no-store"}); // Replace with your actual server URL
+    const response = await trackedFetch(API_URL + '/info', {cache: "no-store"}); // Replace with your actual server URL
     
     if (!response.ok) {
       throw new Error('Failed to fetch agents data.');
@@ -37,14 +103,13 @@ export async function getInfo() {
 
     return result
   } catch (error) {
-    console.error('Error fetching agents data');
-    return []
+    return failed('fetching agents data', error, []);
   }
 }
 
 export async function getAllLocations() {
   try {
-    const response = await fetch('http://localhost:8080/locations', {cache: "no-store"}); // Replace with your actual server URL
+    const response = await trackedFetch(API_URL + '/locations', {cache: "no-store"}); // Replace with your actual server URL
     
     if (!response.ok) {
       throw new Error('Failed to fetch location data.');
@@ -54,14 +119,13 @@ export async function getAllLocations() {
     console.log("fetching new data")
     return result.locations
   } catch (error) {
-    console.error('Error fetching locations data');
-    return []
+    return failed('fetching locations data', error, []);
   }
 }
 
 export async function interview(agent: string, question: string) {
   try {
-    const response = await fetch('http://localhost:8080/agents/' + agent + '/ask',{
+    const response = await trackedFetch(API_URL + '/agents/' + agent + '/ask',{
       method: 'POST',
       headers: {
         Accept: 'application.json',
@@ -82,22 +146,36 @@ export async function interview(agent: string, question: string) {
 
     return result
   } catch (error) {
-    console.error('Error interviewing agent');
-    return []
+    return failed('interviewing agent', error, []);
   }
 }
 
 export async function deleteAgent(name: string) {
   try {
-    const response = await fetch('http://localhost:8080/agents/' + name, {
+    const response = await trackedFetch(API_URL + '/agents/' + name, {
       method: 'DELETE',
       cache: 'no-store'
     });
 
     return await response.json();
   } catch (error) {
-    console.error('Error deleting agent');
-    return { success: false };
+    return failed('deleting agent', error, { success: false });
+  }
+}
+
+export async function deleteLocation(name: string) {
+  try {
+    const response = await trackedFetch(
+      API_URL + '/locations/' + encodeURIComponent(name),
+      {
+        method: 'DELETE',
+        cache: 'no-store'
+      }
+    );
+
+    return await response.json();
+  } catch (error) {
+    return failed('deleting location', error, { success: false });
   }
 }
 
@@ -108,8 +186,8 @@ export interface Characteristic {
 
 export async function getCharacteristics(name: string): Promise<Characteristic[]> {
   try {
-    const response = await fetch(
-      'http://localhost:8080/agents/' + name + '/characteristics',
+    const response = await trackedFetch(
+      API_URL + '/agents/' + name + '/characteristics',
       { cache: 'no-store' }
     );
 
@@ -120,15 +198,14 @@ export async function getCharacteristics(name: string): Promise<Characteristic[]
     const result = await response.json();
     return result.characteristics;
   } catch (error) {
-    console.error('Error fetching characteristics');
-    return [];
+    return failed('fetching characteristics', error, []);
   }
 }
 
 export async function addCharacteristic(name: string, description: string) {
   try {
-    const response = await fetch(
-      'http://localhost:8080/agents/' + name + '/characteristics',
+    const response = await trackedFetch(
+      API_URL + '/agents/' + name + '/characteristics',
       {
         method: 'POST',
         headers: {
@@ -142,28 +219,26 @@ export async function addCharacteristic(name: string, description: string) {
 
     return await response.json();
   } catch (error) {
-    console.error('Error adding characteristic');
-    return { success: false };
+    return failed('adding characteristic', error, { success: false });
   }
 }
 
 export async function removeCharacteristic(name: string, index: number) {
   try {
-    const response = await fetch(
-      'http://localhost:8080/agents/' + name + '/characteristics/' + index,
+    const response = await trackedFetch(
+      API_URL + '/agents/' + name + '/characteristics/' + index,
       { method: 'DELETE', cache: 'no-store' }
     );
 
     return await response.json();
   } catch (error) {
-    console.error('Error removing characteristic');
-    return { success: false };
+    return failed('removing characteristic', error, { success: false });
   }
 }
 
 export async function createLocation(name: string) {
   try {
-    const response = await fetch('http://localhost:8080/locations', {
+    const response = await trackedFetch(API_URL + '/locations', {
       method: 'POST',
       headers: {
         Accept: 'application.json',
@@ -179,8 +254,7 @@ export async function createLocation(name: string) {
 
     return await response.json();
   } catch (error) {
-    console.error('Error creating location');
-    return { success: false };
+    return failed('creating location', error, { success: false });
   }
 }
 
@@ -190,15 +264,14 @@ export interface ConversationLine {
 }
 
 export interface ConversationGroup {
-  talker: string;
-  talkee: string;
+  participants: string[];
   time: string | null;
   dialog: ConversationLine[];
 }
 
 export async function getAllConversations(): Promise<ConversationGroup[]> {
   try {
-    const response = await fetch('http://localhost:8080/conversations', {
+    const response = await trackedFetch(API_URL + '/conversations', {
       cache: 'no-store'
     });
 
@@ -209,8 +282,7 @@ export async function getAllConversations(): Promise<ConversationGroup[]> {
     const result = await response.json();
     return result.conversations;
   } catch (error) {
-    console.error('Error fetching conversations');
-    return [];
+    return failed('fetching conversations', error, []);
   }
 }
 
@@ -223,8 +295,8 @@ export interface DiaryEntry {
 
 export async function getDiary(name: string): Promise<DiaryEntry[]> {
   try {
-    const response = await fetch(
-      'http://localhost:8080/agents/' + name + '/diary',
+    const response = await trackedFetch(
+      API_URL + '/agents/' + name + '/diary',
       { cache: 'no-store' }
     );
 
@@ -235,19 +307,35 @@ export async function getDiary(name: string): Promise<DiaryEntry[]> {
     const result = await response.json();
     return result.diary;
   } catch (error) {
-    console.error('Error fetching diary');
-    return [];
+    return failed('fetching diary', error, []);
   }
 }
 
 export interface GeneratedCharacter {
   name: string;
-  memories: string[];
+  /** A routine that puts them somewhere at a predictable time. */
+  anchor: string;
+  /** Something they are chasing that a day will not settle. */
+  want: string;
+  /** Something they visibly do, rather than something they are. */
+  behavior: string;
+  /** Something that costs them, and that they do anyway. */
+  flaw: string;
+  /** Somebody off-screen - family, an ex, a creditor. */
+  tie: string;
+  /** Something small another agent could notice by watching. */
+  tell: string;
 }
 
-export async function generateCharacter(): Promise<GeneratedCharacter | null> {
+/**
+ * @param alignment 0 is the worst person in town, 100 the best. What shifts is
+ * what they want and who pays for it, not whether their adjectives are nice.
+ */
+export async function generateCharacter(
+  alignment = 50
+): Promise<GeneratedCharacter | null> {
   try {
-    const response = await fetch('http://localhost:8080/agents/generate', {
+    const response = await trackedFetch(API_URL + '/agents/generate?alignment=' + alignment, {
       method: 'POST',
       headers: {
         Accept: 'application.json',
@@ -262,8 +350,7 @@ export async function generateCharacter(): Promise<GeneratedCharacter | null> {
 
     return await response.json();
   } catch (error) {
-    console.error('Error generating character');
-    return null;
+    return failed('generating character', error, null);
   }
 }
 
@@ -274,7 +361,7 @@ export async function createAgent(
   activity: string
 ) {
   try {
-    const response = await fetch('http://localhost:8080/agents', {
+    const response = await trackedFetch(API_URL + '/agents', {
       method: 'POST',
       headers: {
         Accept: 'application.json',
@@ -290,8 +377,7 @@ export async function createAgent(
 
     return await response.json();
   } catch (error) {
-    console.error('Error creating agent');
-    return { success: false };
+    return failed('creating agent', error, { success: false });
   }
 }
 
@@ -312,11 +398,12 @@ export async function getSimulationStatus(): Promise<SimulationStatus> {
     tickCount: 0,
     lastError: null,
     time: '',
+    date: '',
     agentCount: 0
   };
 
   try {
-    const response = await fetch('http://localhost:8080/simulation/status', {
+    const response = await trackedFetch(API_URL + '/simulation/status', {
       cache: 'no-store'
     });
 
@@ -326,14 +413,13 @@ export async function getSimulationStatus(): Promise<SimulationStatus> {
 
     return await response.json();
   } catch (error) {
-    console.error('Error fetching simulation status');
-    return fallback;
+    return failed('fetching simulation status', error, fallback);
   }
 }
 
 export async function startSimulation(intervalSeconds: number) {
   try {
-    const response = await fetch('http://localhost:8080/simulation/start', {
+    const response = await trackedFetch(API_URL + '/simulation/start', {
       method: 'POST',
       headers: {
         Accept: 'application.json',
@@ -345,28 +431,58 @@ export async function startSimulation(intervalSeconds: number) {
 
     return await response.json();
   } catch (error) {
-    console.error('Error starting simulation');
-    return { success: false };
+    return failed('starting simulation', error, { success: false });
   }
 }
 
 export async function stopSimulation() {
   try {
-    const response = await fetch('http://localhost:8080/simulation/stop', {
+    const response = await trackedFetch(API_URL + '/simulation/stop', {
       method: 'POST',
       cache: 'no-store'
     });
 
     return await response.json();
   } catch (error) {
-    console.error('Error stopping simulation');
-    return { success: false };
+    return failed('stopping simulation', error, { success: false });
+  }
+}
+
+export async function setTimestep(minutes: number) {
+  try {
+    const response = await trackedFetch(API_URL + '/timestep', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ numOfMinutes: String(minutes) }),
+      cache: 'no-store'
+    });
+
+    return await response.json();
+  } catch (error) {
+    return failed('setting timestep', error, { success: false });
+  }
+}
+
+/**
+ * @param startAt clock time the town restarts at, as HH:mm. Noon by default -
+ * a town that restarts at three in the morning spends its first stretch asleep.
+ */
+export async function resetSimulation(startAt = '12:00') {
+  try {
+    const response = await trackedFetch(API_URL + '/simulation/reset?startAt=' + startAt, {
+      method: 'POST',
+      cache: 'no-store'
+    });
+
+    return await response.json();
+  } catch (error) {
+    return failed('resetting simulation', error, { success: false });
   }
 }
 
 export async function updateLocation(name: string, state: string) {
   try {
-    const response = await fetch('http://localhost:8080/locations/' + name,{
+    const response = await trackedFetch(API_URL + '/locations/' + name,{
       method: 'POST',
       headers: {
         Accept: 'application.json',
@@ -387,7 +503,120 @@ export async function updateLocation(name: string, state: string) {
 
     return result
   } catch (error) {
-    console.error('Error updating location');
-    return []
+    return failed('updating location', error, []);
+  }
+}
+
+export interface StoryState {
+  story: string;
+  exists: boolean;
+  updated?: boolean;
+  asOfDate: string | null;
+  asOfTime: string | null;
+  minutesSinceUpdate?: number;
+  message?: string | null;
+}
+
+export async function getStory(): Promise<StoryState> {
+  try {
+    const response = await trackedFetch(API_URL + '/story', {
+      cache: 'no-store'
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch story.');
+    }
+
+    return await response.json();
+  } catch (error) {
+    return failed('fetching story', error, { story: '', exists: false, asOfDate: null, asOfTime: null });
+  }
+}
+
+export async function generateStory(): Promise<StoryState | null> {
+  try {
+    const response = await trackedFetch(API_URL + '/story/generate', {
+      method: 'POST',
+      cache: 'no-store'
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to generate story.');
+    }
+
+    return await response.json();
+  } catch (error) {
+    return failed('generating story', error, null);
+  }
+}
+
+export function getLocationImageUrl(name: string): string {
+  return `${API_URL}/locations/${encodeURIComponent(name)}/image`;
+}
+
+export async function uploadLocationImage(
+  name: string,
+  file: File
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    const formData = new FormData();
+    formData.append('image', file);
+
+    // No Content-Type header here on purpose - the browser needs to set
+    // its own multipart boundary, unlike every other function in this
+    // file which sends JSON.
+    const response = await trackedFetch(
+      `${API_URL}/locations/${encodeURIComponent(name)}/image`,
+      {
+        method: 'POST',
+        body: formData,
+        cache: 'no-store'
+      }
+    );
+
+    return await response.json();
+  } catch (error) {
+    return failed('uploading location image', error, { success: false, message: 'Upload failed' });
+  }
+}
+export interface PromptUsage {
+  calls: number;
+  promptTokens: number;
+  completionTokens: number;
+  reasoningTokens: number;
+  cacheHitTokens: number;
+  cacheMissTokens: number;
+  estimatedCostUsd: number;
+}
+
+export interface UsageReport {
+  byPrompt: Record<string, PromptUsage>;
+  total: PromptUsage;
+}
+
+export async function getUsage(): Promise<UsageReport | null> {
+  try {
+    const response = await trackedFetch(API_URL + '/usage', { cache: 'no-store' });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch usage.');
+    }
+
+    return await response.json();
+  } catch (error) {
+    return failed('fetching usage', error, null);
+  }
+}
+
+export async function resetUsage() {
+  try {
+    const response = await trackedFetch(API_URL + '/usage/reset', {
+      method: 'POST',
+      cache: 'no-store'
+    });
+
+    return await response.json();
+  } catch (error) {
+    return failed('resetting usage', error, { success: false });
   }
 }

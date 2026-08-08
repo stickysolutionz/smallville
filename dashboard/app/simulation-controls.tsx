@@ -1,11 +1,13 @@
 'use client';
 
 import { Text, Button, Badge, Flex } from '@tremor/react';
-import { PlayIcon, PauseIcon } from '@heroicons/react/24/outline';
+import { PlayIcon, PauseIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
+  getInfo,
   getSimulationStatus,
+  resetSimulation,
   startSimulation,
   stopSimulation,
   SimulationStatus
@@ -87,7 +89,12 @@ export default function SimulationControls() {
   const router = useRouter();
   const [status, setStatus] = useState<SimulationStatus | null>(null);
   const [intervalInput, setIntervalInput] = useState('15');
+  const [stepMinutes, setStepMinutes] = useState<number>(20);
+  // Noon by default. A town that restarts at three in the morning spends its
+  // first stretch asleep with nothing to watch.
+  const [resetStartAt, setResetStartAt] = useState('12:00');
   const [isPending, setPending] = useState(false);
+  const [isResetting, setResetting] = useState(false);
   const initialized = useRef(false);
 
   async function refreshStatus() {
@@ -95,6 +102,10 @@ export default function SimulationControls() {
     setStatus(s);
     if (!initialized.current) {
       setIntervalInput(String(s.intervalSeconds));
+      const info = await getInfo();
+      if (!Array.isArray(info)) {
+        if (info?.step) setStepMinutes(Number(info.step));
+      }
       initialized.current = true;
     }
   }
@@ -134,6 +145,22 @@ export default function SimulationControls() {
     await refreshStatus();
     router.refresh();
     setPending(false);
+  }
+
+  async function handleReset() {
+    if (
+      !confirm(
+        'Reset the simulation? This permanently wipes all conversations, every agent\'s diary, and the generated story. Agents and locations are kept.'
+      )
+    ) {
+      return;
+    }
+
+    setResetting(true);
+    await resetSimulation(resetStartAt);
+    await refreshStatus();
+    router.refresh();
+    setResetting(false);
   }
 
   const seconds = Math.max(2, Number(intervalInput) || 15);
@@ -177,7 +204,16 @@ export default function SimulationControls() {
         </div>
 
         <Text>≈ {ticksPerMinute} ticks/min</Text>
+
+        <Text className="text-gray-500">{stepMinutes} simulated minutes per tick</Text>
       </Flex>
+
+      <Text className="mt-2 text-gray-500">
+        The interval is how long the simulation waits between ticks in real
+        time. How much simulated time each tick covers is fixed - the gap
+        between conversations, how many ticks a plan spans and how often a day
+        rolls over all depend on it.
+      </Text>
 
       <Text className="mt-4">
         Simulated time: {status?.date ? `${status.date}, ` : ''}
@@ -190,6 +226,30 @@ export default function SimulationControls() {
           Last tick error: {status.lastError}
         </Text>
       )}
+
+      <Flex justifyContent="end" alignItems="center" className="mt-6 gap-3">
+        <label className="text-sm text-gray-500">
+          Restart the day at
+          <input
+            type="time"
+            value={resetStartAt}
+            disabled={isResetting}
+            className="ml-2 h-8 rounded-md border border-gray-200 px-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500 disabled:opacity-50"
+            onChange={(e) => setResetStartAt(e.target.value || '12:00')}
+          />
+        </label>
+
+        <Button
+          size="xs"
+          variant="secondary"
+          color="red"
+          icon={ArrowPathIcon}
+          loading={isResetting}
+          onClick={handleReset}
+        >
+          Reset Simulation
+        </Button>
+      </Flex>
     </div>
   );
 }

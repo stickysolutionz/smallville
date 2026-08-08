@@ -1,16 +1,27 @@
 package io.github.nickm980.smallville.api.v1;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,6 +29,8 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.github.nickm980.smallville.Settings;
+import io.github.nickm980.smallville.Util;
 import io.github.nickm980.smallville.World;
 import io.github.nickm980.smallville.api.v1.dto.*;
 import io.github.nickm980.smallville.entities.*;
@@ -25,12 +38,25 @@ import io.github.nickm980.smallville.exceptions.AgentNotFoundException;
 import io.github.nickm980.smallville.exceptions.LocationNotFoundException;
 import io.github.nickm980.smallville.exceptions.SmallvilleException;
 import io.github.nickm980.smallville.llm.LLM;
+import io.github.nickm980.smallville.locations.LocationImageMeta;
+import io.github.nickm980.smallville.locations.LocationImageStore;
+import io.github.nickm980.smallville.config.GeneralConfig;
 import io.github.nickm980.smallville.memory.Characteristic;
+import io.github.nickm980.smallville.memory.Concern;
 import io.github.nickm980.smallville.memory.Memory;
 import io.github.nickm980.smallville.memory.MemoryStream;
 import io.github.nickm980.smallville.memory.Observation;
+import io.github.nickm980.smallville.memory.Plan;
 import io.github.nickm980.smallville.memory.TemporalMemory;
+import io.github.nickm980.smallville.config.SmallvilleConfig;
+import io.github.nickm980.smallville.persistence.WorldMapper;
+import io.github.nickm980.smallville.persistence.WorldSnapshot;
+import io.github.nickm980.smallville.persistence.WorldStore;
+import io.github.nickm980.smallville.prompts.PromptBuilder;
 import io.github.nickm980.smallville.prompts.PromptRequest;
+import io.github.nickm980.smallville.relationships.Relationship;
+import io.github.nickm980.smallville.story.StorySnapshot;
+import io.github.nickm980.smallville.story.StoryStore;
 import io.github.nickm980.smallville.update.UpdateService;
 
 public class SimulationService {
@@ -41,32 +67,157 @@ public class SimulationService {
     private final UpdateService prompts;
     private final World world;
     private final LLM chat;
-    private int progress;
 
-    // Tracks the last simulated time two agents talked, keyed by their sorted
-    // names, so co-located agents don't restart a fresh conversation every
-    // single tick they happen to remain in the same room.
-    private final Map<String, LocalDateTime> lastConversationAt = new HashMap<>();
-    private static final Duration CONVERSATION_COOLDOWN = Duration.ofMinutes(60);
+    // Tracks the last simulated time a location had a conversation, keyed by
+    // location name, so agents lingering in the same room don't restart a
+    // fresh conversation every single tick. Keyed per-location rather than
+    // per-participant-pair since who actually joins a group conversation is
+    // probabilistic and changes tick to tick.
+    // Concurrent because deleteLocation prunes it without taking the
+    // simulation lock, while the tick reads and writes it holding that lock.
+    private final Map<String, LocalDateTime> lastConversationAt = new java.util.concurrent.ConcurrentHashMap<>();
+    /**
+     * The shortest gap between two conversations in the same place. Only a
+     * floor to stop one room producing a conversation on every consecutive
+     * tick - whether a conversation happens at all is decided by
+     * {@link #conversationUrge}, not by this.
+     */
+    private static final Duration CONVERSATION_FLOOR = Duration.ofMinutes(20);
+
+    /**
+     * The floor, but never shorter than a couple of ticks.
+     * <p>
+     * Its whole job is to stop one room producing a conversation on
+     * consecutive ticks, and a fixed twenty minutes stops doing that the moment
+     * the timestep reaches twenty minutes - every tick then clears it exactly,
+     * and the floor is silently inert. Expressing it in ticks as well as
+     * minutes means it keeps working whatever the timestep is set to.
+     */
+    private static Duration conversationFloor() {
+	Duration twoTicks = SimulationTime.getStepDuration().multipliedBy(2);
+
+	return twoTicks.compareTo(CONVERSATION_FLOOR) > 0 ? twoTicks : CONVERSATION_FLOOR;
+    }
+
+    /**
+     * Seeded from {@link Settings#getSeed()} so a run can be replayed when
+     * working out why a particular conversation happened. Bare Math.random()
+     * and an unseeded shuffle made that impossible.
+     */
+    private final Random random = new Random(Settings.getSeed());
+    private final StoryStore storyStore = new StoryStore();
+    private final LocationImageStore imageStore = new LocationImageStore();
+    private final WorldStore worldStore = new WorldStore();
+
+    /**
+     * Guards every mutation of world state.
+     * <p>
+     * SimulationRunner drives ticks on its own scheduled thread while Javalin
+     * serves the dashboard from a separate pool, and both reach the same
+     * agents, locations and conversations. Reset-vs-tick is the collision a
+     * user actually hits. Fair so that a queued control action can't be
+     * starved by back-to-back ticks.
+     * <p>
+     * Reads are deliberately left unlocked - they may see a tick partway
+     * through, which is harmless for display, and locking them would stall the
+     * dashboard behind every LLM call. The underlying collections are
+     * concurrent so those reads are still safe.
+     */
+    private final ReentrantLock simulationLock = new ReentrantLock(true);
+
+    /**
+     * Long enough to outlast one agent's update (several sequential LLM calls,
+     * each with a 3 minute read timeout in the worst case) without leaving a
+     * clicked button hanging indefinitely.
+     */
+    private static final long LOCK_TIMEOUT_SECONDS = 90;
 
     public SimulationService(LLM llm, World world) {
 	this.world = world;
 	this.mapper = new ModelMapper();
 	this.prompts = new UpdateService(llm, world);
 	this.chat = llm;
-	this.progress = 0;
+    }
+
+    /**
+     * Runs {@code action} with exclusive access to world state.
+     *
+     * @throws SmallvilleException if the simulation stays busy past the timeout
+     */
+    private void exclusively(Runnable action) {
+	exclusivelyGet(() -> {
+	    action.run();
+	    return null;
+	});
+    }
+
+    private <T> T exclusivelyGet(Supplier<T> action) {
+	boolean acquired;
+
+	try {
+	    acquired = simulationLock.tryLock(LOCK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+	} catch (InterruptedException e) {
+	    Thread.currentThread().interrupt();
+	    throw new SmallvilleException("Interrupted while waiting for the simulation");
+	}
+
+	if (!acquired) {
+	    throw new SmallvilleException("The simulation is busy processing a tick. Try again in a moment.");
+	}
+
+	try {
+	    return action.get();
+	} finally {
+	    simulationLock.unlock();
+	}
+    }
+
+    /**
+     * Restores a previously saved world. Called once at startup, before the
+     * server accepts requests.
+     */
+    public void loadWorld() {
+	Optional<WorldSnapshot> snapshot = worldStore.load();
+
+	if (snapshot.isEmpty()) {
+	    LOG.info("No saved world found, starting fresh");
+	    return;
+	}
+
+	exclusively(() -> {
+	    WorldMapper.restore(world, snapshot.get());
+	    imageStore.pruneMissing(
+		    world.getLocations().stream().map(Location::getFullPath).collect(Collectors.toSet()));
+	});
+
+	LOG.info("Restored " + world.getAgents().size() + " agents and " + world.getLocations().size()
+		+ " locations from world-data/world.json");
+    }
+
+    /**
+     * Snapshots the world under the lock, then writes outside it - the file
+     * write must not hold up a tick.
+     */
+    public void saveWorld() {
+	try {
+	    worldStore.save(exclusivelyGet(() -> WorldMapper.toSnapshot(world)));
+	} catch (Exception e) {
+	    LOG.error("Failed to save the world", e);
+	}
     }
 
     public void createMemory(CreateMemoryRequest request) {
-	Agent agent = world.getAgent(request.getName()).orElseThrow();
-	Observation observation = new Observation(request.getDescription());
-	observation.setReactable(request.isReactable());
-	agent.getMemoryStream().add(observation);
+	exclusively(() -> {
+	    Agent agent = world.getAgent(request.getName()).orElseThrow();
+	    Observation observation = new Observation(request.getDescription());
+	    observation.setReactable(request.isReactable());
+	    agent.getMemoryStream().add(observation);
 
-	if (observation.isReactable()) {
-	    SimulationTime.update();
-	    prompts.react(agent, observation.getDescription());
-	}
+	    if (observation.isReactable()) {
+		SimulationTime.update();
+		prompts.react(agent, observation.getDescription());
+	    }
+	});
     }
 
     public AgentStateResponse getAgentState(String name) {
@@ -84,10 +235,24 @@ public class SimulationService {
 	List<LocationStateResponse> result = new ArrayList<LocationStateResponse>();
 
 	for (Location location : world.getLocations()) {
-	    result.add(mapper.fromLocation(location));
+	    LocationStateResponse response = mapper.fromLocation(location);
+	    response.setHasImage(imageStore.hasImage(location.getFullPath()));
+	    result.add(response);
 	}
 
 	return result;
+    }
+
+    public void saveLocationImage(String locationName, byte[] bytes, String contentType) {
+	imageStore.save(locationName, bytes, contentType);
+    }
+
+    public Optional<LocationImageMeta> findLocationImage(String locationName) {
+	return imageStore.find(locationName);
+    }
+
+    public Optional<byte[]> readLocationImageBytes(String locationName) {
+	return imageStore.readBytes(locationName);
     }
 
     public void createAgent(CreateAgentRequest request) {
@@ -106,13 +271,27 @@ public class SimulationService {
 
 	Agent agent = new Agent(request.getName(), characteristics, request.getActivity(), location);
 
-	if (world.create(agent)) {
-	    String traits = prompts.createTraitsWithCharacteristics(agent);
-	    agent.setTraits(traits);
-	}
+	// No model call here on purpose. Creating an agent is a change to world
+	// state, and it should cost what that costs - the agent's trait summary
+	// is derived from the characteristics the user just typed, is used on a
+	// single line of one prompt, and is filled in by the next tick (see
+	// UpdateService.updateAgent). Blocking the request on it made adding
+	// someone to the town take tens of seconds for no reason.
+	//
+	// This also means a failed trait call no longer means a failed
+	// creation: previously the exception propagated and the agent was never
+	// added at all.
+	//
+	// No lock either. The agent repository is a ConcurrentHashMap and this
+	// is a single putIfAbsent, and updateState snapshots the agent list at
+	// the start of a tick - so someone added midway through simply joins
+	// from the next tick rather than racing the current one. Taking the
+	// lock meant a local map insert waited out an in-flight agent update,
+	// which is 30-45 seconds of model calls.
+	world.create(agent);
     }
 
-    public GeneratedCharacterResponse generateCharacter() {
+    public GeneratedCharacterResponse generateCharacter(double alignment) {
 	List<String> existingNames = world
 	    .getAgents()
 	    .stream()
@@ -126,8 +305,13 @@ public class SimulationService {
 	    attempts++;
 
 	    try {
-		String raw = chat.sendChat(new PromptRequest.User(buildGenerateCharacterPrompt(existingNames)), 1.0);
-		GeneratedCharacterResponse candidate = parseGeneratedCharacter(raw);
+		PromptRequest request = new PromptBuilder()
+		    .with("existingNames", existingNames.isEmpty() ? "none yet" : String.join(", ", existingNames))
+		    .with("alignment", describeAlignment(alignment))
+		    .setPrompt(SmallvilleConfig.getPrompts().getStory().getGenerateCharacter())
+		    .build();
+
+		GeneratedCharacterResponse candidate = parseGeneratedCharacter(chat.sendChat(request.labelled("generateCharacter").asJsonResponse(), 1.0));
 
 		boolean collides = existingNames
 		    .stream()
@@ -150,51 +334,55 @@ public class SimulationService {
 	return result;
     }
 
-    private String buildGenerateCharacterPrompt(List<String> existingNames) {
-	String avoidNames = existingNames.isEmpty() ? "none yet"
-		: String.join(", ", existingNames);
+    /**
+     * Turns a 0-100 dial into a description of what sort of person to write.
+     * <p>
+     * Deliberately not "give them nasty traits" at one end and "nice traits" at
+     * the other. What shifts is what they want and who pays for it. The middle
+     * is the default and the most useful: most people are neither, and a town of
+     * saints is as flat as a town of monsters.
+     * <p>
+     * Every band insists the character show on the outside. Under this
+     * simulation people are only known by being watched, so a villain whose
+     * villainy is entirely interior can never be found out, and may as well not
+     * have it.
+     */
+    private static String describeAlignment(double alignment) {
+	double dial = Math.max(0, Math.min(100, alignment));
 
-	return """
-		Invent an original resident of a small town for a life simulation game.
+	String kind = dial < 15
+		? "Somebody genuinely dangerous. What they want costs other people badly, and they have made their peace with that. Give them a routine that a dangerous person would actually keep, and make what they do visible in some small way - somebody watching closely could notice something is off, even if they could not say what."
+		: dial < 35
+			? "Somebody selfish, who will take from people when it suits them. Not a monster - they would tell you they are a normal person having a hard time, and they would half believe it. What they take should show in how they behave, not just in what they think."
+			: dial < 65
+				? "An ordinary person with ordinary mixed motives. Mostly decent, occasionally not, in the way most people are. Their flaw should be the kind that annoys the people who love them rather than the kind that ruins lives."
+				: dial < 85
+					? "Somebody who genuinely puts other people first, and pays for it. Not a saint - they are tired, or taken advantage of, or quietly resentful about it, and it still does not stop them."
+					: "Somebody good in a way that costs them dearly and that they never mention. Their want should be for somebody else entirely. Give them a flaw that comes from the same place as the kindness.";
 
-		Names already in use, your character's name (first and last) must NOT match or closely resemble any of these: %s
-
-		Respond with ONLY raw JSON, no markdown code fences, no commentary, in exactly this shape:
-		{"name": "First Last", "memories": ["...", "...", "...", "...", "...", "..."]}
-
-		Rules for "memories":
-		- Provide 5 to 7 entries.
-		- Each entry is a separate, specific sentence written in third person, starting with the character's first name.
-		- Together they must cover: their job or daily role, at least two distinct personality traits (not just "friendly" or "kind" alone - be specific and a little unusual), one meaningful relationship or social dynamic (family, friend, rival, unrequited crush, etc.), one personal goal or desire, and one flaw, fear, secret, or contradiction that makes them feel like a real person rather than a stock character.
-		- Avoid generic filler like "X likes reading" as the only trait - go deeper into why, or pair it with something more surprising.
-		- Do not repeat the same idea across multiple entries.
-		""".formatted(avoidNames);
+	return kind + " (Written to a scale where 0 is the worst person in town and 100 the best; this one is " + Math
+	    .round(dial) + ".)";
     }
 
     private GeneratedCharacterResponse parseGeneratedCharacter(String raw) {
-	String cleaned = raw.trim();
-
-	if (cleaned.startsWith("```")) {
-	    cleaned = cleaned.replaceAll("^```[a-zA-Z]*", "").replaceAll("```$", "").trim();
-	}
-
+	String cleaned = Util.stripCodeFence(raw);
 	ObjectMapper objectMapper = new ObjectMapper();
 
 	try {
 	    JsonNode node = objectMapper.readTree(cleaned);
 	    GeneratedCharacterResponse result = new GeneratedCharacterResponse();
 
-	    String name = node.get("name").asText().trim();
-	    List<String> memories = new ArrayList<>();
+	    result.setName(node.path("name").asText("").trim());
+	    result.setAnchor(node.path("anchor").asText("").trim());
+	    result.setWant(node.path("want").asText("").trim());
+	    result.setBehavior(node.path("behavior").asText("").trim());
+	    result.setFlaw(node.path("flaw").asText("").trim());
+	    result.setTie(node.path("tie").asText("").trim());
+	    result.setTell(node.path("tell").asText("").trim());
 
-	    node.get("memories").forEach(memory -> memories.add(memory.asText()));
-
-	    if (name.isEmpty() || memories.isEmpty()) {
-		throw new SmallvilleException("Generated character was missing a name or memories");
+	    if (result.getName().isEmpty() || result.getMemories().isEmpty()) {
+		throw new SmallvilleException("Generated character was missing a name or any traits");
 	    }
-
-	    result.setName(name);
-	    result.setMemories(memories);
 
 	    return result;
 	} catch (Exception e) {
@@ -202,6 +390,264 @@ public class SimulationService {
 	}
     }
 
+    /** Everything the story prompt needs, snapshotted in one locked read. */
+    private record StoryMaterial(String diary, String conversations, String roster, String span) {
+    }
+
+    /**
+     * How much simulated time the material actually covers, in words.
+     * <p>
+     * Without it the model guesses, and guesses generously - a single
+     * simulated day came back titled "A Week at the Cottage". It is told the
+     * current date and time but never how far back the record goes.
+     */
+    private String describeSpan(LocalDateTime since) {
+	LocalDateTime now = SimulationTime.now();
+	LocalDateTime from = since.isAfter(LocalDateTime.MIN) ? since : earliestMaterialTime();
+
+	if (from == null || !from.isBefore(now)) {
+	    return "a brief moment";
+	}
+
+	long minutes = Duration.between(from, now).toMinutes();
+	String length = minutes < 90 ? minutes + " minutes"
+		: minutes < 60 * 36 ? (minutes / 60) + " hours" : (minutes / 60 / 24) + " days";
+
+	return length + ", from " + from.format(STORY_FULL_FORMAT) + " to " + now.format(STORY_FULL_FORMAT);
+    }
+
+    /** The oldest thing anybody remembers, for a first recap. */
+    private LocalDateTime earliestMaterialTime() {
+	return world
+	    .getAgents()
+	    .stream()
+	    .flatMap(agent -> agent.getMemoryStream().getMemories().stream())
+	    .filter(memory -> memory instanceof TemporalMemory)
+	    .map(memory -> ((TemporalMemory) memory).getTime())
+	    .filter(java.util.Objects::nonNull)
+	    .min(LocalDateTime::compareTo)
+	    .orElse(null);
+    }
+
+    private static final DateTimeFormatter STORY_DATE_FORMAT = DateTimeFormatter.ofPattern("EEEE, MMMM d");
+    private static final DateTimeFormatter STORY_TIME_FORMAT = DateTimeFormatter.ofPattern("h:mm a");
+    private static final DateTimeFormatter STORY_FULL_FORMAT = DateTimeFormatter.ofPattern("EEEE, MMMM d, h:mm a");
+
+    /**
+     * How many recent passages are sent to the model word for word. Everything
+     * older is represented by the rolling summary instead.
+     */
+    private static final int PASSAGES_KEPT_VERBATIM = 6;
+
+    public StoryResponse getStory() {
+	Optional<StorySnapshot> snapshot = storyStore.load();
+	StoryResponse result = new StoryResponse();
+
+	if (snapshot.isEmpty() || snapshot.get().isEmpty()) {
+	    result.setExists(false);
+	    result.setStory("");
+	    return result;
+	}
+
+	StorySnapshot current = snapshot.get();
+	result.setExists(true);
+	result.setStory(current.getStory());
+	result.setAsOfDate(current.getAsOf().format(STORY_DATE_FORMAT));
+	result.setAsOfTime(current.getAsOf().format(STORY_TIME_FORMAT));
+	result.setMinutesSinceUpdate(Duration.between(current.getAsOf(), SimulationTime.now()).toMinutes());
+	return result;
+    }
+
+    // Synchronized so two overlapping requests (e.g. an impatient double
+    // click, or two browser tabs) can't both read the same prior snapshot
+    // before either has saved, which would let them independently "discover"
+    // the same new material and race to overwrite each other's save.
+    public synchronized StoryResponse generateStory() {
+	StorySnapshot previous = storyStore.load().orElseGet(StorySnapshot::new);
+	boolean hasPrevious = !previous.isEmpty();
+	LocalDateTime since = storyCursor(previous, hasPrevious);
+
+	// Gathered under the lock so the material can't be a half-updated view
+	// of a tick in progress. The LLM call below deliberately runs outside
+	// the lock - holding it across a network round trip would stall ticks
+	// for as long as the model takes to answer.
+	StoryMaterial material = exclusivelyGet(() -> new StoryMaterial(collectNewDiaryText(since),
+		collectNewConversationText(since),
+		world.getAgents().stream().map(Agent::getFullName).collect(Collectors.joining(", ")),
+		describeSpan(since)));
+
+	String newDiaryText = material.diary();
+	String newConversationText = material.conversations();
+
+	if (newDiaryText.isBlank() && newConversationText.isBlank()) {
+	    StoryResponse result = getStory();
+	    result.setUpdated(false);
+	    result.setMessage(hasPrevious ? "No new developments since the last recap."
+		    : "Nothing has happened in the town yet.");
+	    return result;
+	}
+
+	PromptBuilder builder = new PromptBuilder()
+	    .with("roster", material.roster())
+	    .with("now", SimulationTime.now().format(STORY_FULL_FORMAT))
+	    .with("span", material.span())
+	    .with("diary", newDiaryText)
+	    .with("conversations", newConversationText);
+
+	if (hasPrevious) {
+	    // Only the recent passages plus a summary of the rest, never the
+	    // whole accumulated story - see PASSAGES_KEPT_VERBATIM.
+	    builder
+		.with("storySoFar", previous.getPromptContext())
+		.setPrompt(SmallvilleConfig.getPrompts().getStory().getContinuation());
+	} else {
+	    builder.setPrompt(SmallvilleConfig.getPrompts().getStory().getFirst());
+	}
+
+	String passage;
+	try {
+	    passage = chat.sendChat(builder.build().labelled("story"), 0.7).trim();
+	} catch (Exception e) {
+	    LOG.error("Failed to generate story", e);
+	    throw new SmallvilleException("Could not generate the story right now");
+	}
+
+	previous.getPassages().add(passage);
+	previous.setAsOf(SimulationTime.now());
+	compactIfNeeded(previous);
+	storyStore.save(previous);
+
+	StoryResponse result = new StoryResponse();
+	result.setExists(true);
+	result.setUpdated(true);
+	result.setStory(previous.getStory());
+	result.setAsOfDate(previous.getAsOf().format(STORY_DATE_FORMAT));
+	result.setAsOfTime(previous.getAsOf().format(STORY_TIME_FORMAT));
+	result.setMinutesSinceUpdate(0);
+	return result;
+    }
+
+    /**
+     * How far the story is already caught up.
+     */
+    private LocalDateTime storyCursor(StorySnapshot previous, boolean hasPrevious) {
+	if (!hasPrevious || previous.getAsOf() == null) {
+	    return LocalDateTime.MIN;
+	}
+
+	// The cursor is simulated time, and the simulated clock restarts at the
+	// wall clock on every boot. If it now sits behind the last recap, a
+	// cursor in the future would make every future regeneration report "no
+	// new developments" forever.
+	if (SimulationTime.now().isBefore(previous.getAsOf())) {
+	    LOG.warn("Simulation clock is behind the last story update, recapping everything still on record");
+	    return LocalDateTime.MIN;
+	}
+
+	return previous.getAsOf();
+    }
+
+    /**
+     * Folds older passages into the rolling summary once too many have built
+     * up, so the continuation prompt stays a bounded size no matter how long
+     * the town runs. The passages themselves are kept - only the prompt is
+     * shortened, not the story the dashboard displays.
+     */
+    private void compactIfNeeded(StorySnapshot snapshot) {
+	int foldThrough = snapshot.getPassages().size() - PASSAGES_KEPT_VERBATIM;
+
+	if (foldThrough <= snapshot.getSummarisedThrough()) {
+	    return;
+	}
+
+	List<String> toFold = new ArrayList<>(
+		snapshot.getPassages().subList(snapshot.getSummarisedThrough(), foldThrough));
+
+	PromptRequest request = new PromptBuilder()
+	    .with("summary", snapshot.getSummary())
+	    .with("passages", String.join("\n\n", toFold))
+	    .setPrompt(SmallvilleConfig.getPrompts().getStory().getCompact())
+	    .build();
+
+	try {
+	    snapshot.setSummary(chat.sendChat(request.labelled("storyCompact"), 0.3).trim());
+	    snapshot.setSummarisedThrough(foldThrough);
+	    LOG.info("Compacted " + toFold.size() + " story passages into the running summary");
+	} catch (Exception e) {
+	    // Not fatal. The story is complete on disk either way; the next
+	    // regeneration just carries a slightly longer prompt and retries.
+	    LOG.error("Failed to compact the story summary, leaving it for next time", e);
+	}
+    }
+
+    // Same diary definition getDiary() uses (excludes Characteristic memories
+    // and conversation-derived Dialog observations), applied directly against
+    // the domain objects so we can filter by real timestamp instead of the
+    // already-formatted display string MemoryResponse exposes.
+    private String collectNewDiaryText(LocalDateTime since) {
+	StringBuilder sb = new StringBuilder();
+
+	for (Agent agent : world.getAgents()) {
+	    List<Memory> entries = agent
+		.getMemoryStream()
+		.getMemories()
+		.stream()
+		.filter(m -> !(m instanceof Characteristic))
+		.filter(m -> !(m instanceof Observation && ((Observation) m).isDialog()))
+		// Plan.getTime() is the scheduled time the plan describes, not when
+		// it was written - a plan for 8pm looks "new" forever once 8pm is
+		// after the last snapshot, even if it was already narrated. A
+		// recap should cover what agents actually did, not what they
+		// merely scheduled, so plans are excluded here entirely.
+		.filter(m -> !(m instanceof Plan))
+		.filter(m -> m instanceof TemporalMemory)
+		.filter(m -> ((TemporalMemory) m).getTime().isAfter(since))
+		.sorted(Comparator.comparing(m -> ((TemporalMemory) m).getTime()))
+		.collect(Collectors.toList());
+
+	    if (entries.isEmpty()) {
+		continue;
+	    }
+
+	    sb.append(agent.getFullName()).append(":\n");
+	    for (Memory memory : entries) {
+		sb.append("- ").append(memory.getDescription()).append("\n");
+	    }
+	    sb.append("\n");
+	}
+
+	return sb.toString();
+    }
+
+    private String collectNewConversationText(LocalDateTime since) {
+	StringBuilder sb = new StringBuilder();
+
+	world
+	    .getAllConversations()
+	    .stream()
+	    .filter(conversation -> conversation.getTime() != null && conversation.getTime().isAfter(since))
+	    .sorted(Comparator.comparing(Conversation::getTime))
+	    .forEach(conversation -> {
+		sb.append(String.join(", ", conversation.getParticipants())).append(" talked:\n");
+		for (Dialog line : conversation.getDialog()) {
+		    sb.append("  ").append(line.getName()).append(": ").append(line.getMessage()).append("\n");
+		}
+		sb.append("\n");
+	    });
+
+	return sb.toString();
+    }
+
+    /*
+     * Adding and removing agents and locations does not take the simulation
+     * lock, for the same reason characteristic edits don't: these are single
+     * operations on concurrent collections, and a tick already tolerates the
+     * world changing underneath it - updateState snapshots the agent list up
+     * front and re-checks each agent still exists before updating it.
+     *
+     * The create-agent form can add a location and an agent in one submit, so
+     * locking these meant waiting out an in-flight agent update twice over.
+     */
     public void createLocation(CreateLocationRequest request) {
 	if (world.getLocation(request.getName()).isPresent()) {
 	    throw new SmallvilleException("Location already exists");
@@ -218,6 +664,39 @@ public class SimulationService {
 	world.deleteAgent(name);
     }
 
+    public void deleteLocation(String name) {
+	if (!world.getLocation(name).isPresent()) {
+	    throw new LocationNotFoundException(name);
+	}
+
+	world.deleteLocation(name);
+	// Otherwise the cooldown entry keeps the deleted location's name alive
+	// forever, and a location later recreated under the same name inherits
+	// a stale conversation timestamp.
+	lastConversationAt.remove(name);
+    }
+
+    // Wipes conversations, every agent's diary, and the generated story -
+    // agents, locations, and simulation timing/state are left untouched.
+    public void resetSimulationData(LocalTime startAt) {
+	exclusively(() -> {
+	    // The clock restarts too. Left alone, a wiped town carried on from
+	    // whatever hour the previous run happened to reach - usually the
+	    // small hours, where everyone is asleep and nothing happens for the
+	    // first real half hour of watching.
+	    SimulationTime.setSimulationTime(LocalDateTime.of(LocalDate.now(), startAt));
+	    world.resetSimulationData();
+	    storyStore.clear();
+	    worldStore.clear();
+	    // Without this the cooldown survives the reset and the town stays
+	    // silent for up to an hour of simulated time afterwards, which
+	    // reads as the reset having broken conversations.
+	    lastConversationAt.clear();
+	});
+
+	LOG.info("Simulation reset, starting again at " + startAt);
+    }
+
     public List<Map<String, Object>> getCharacteristics(String name) {
 	Agent agent = world.getAgent(name).orElseThrow(() -> new AgentNotFoundException(name));
 	List<Characteristic> characteristics = agent.getMemoryStream().getCharacteristics();
@@ -230,6 +709,17 @@ public class SimulationService {
 	return result;
     }
 
+    /*
+     * Characteristic edits deliberately do NOT take the simulation lock.
+     *
+     * The lock is held for a whole agent update - several sequential LLM calls,
+     * routinely 30-45 seconds - so taking it made a single list insert wait
+     * that long for no benefit. There is nothing to protect against: the tick
+     * never creates or removes Characteristics (clearDiary explicitly keeps
+     * them), the memory stream is a CopyOnWriteArrayList so add and remove are
+     * atomic, and removal is by object identity rather than by index, so a
+     * concurrent append cannot make it delete the wrong entry.
+     */
     public void addCharacteristic(String name, String description) {
 	Agent agent = world.getAgent(name).orElseThrow(() -> new AgentNotFoundException(name));
 	agent.getMemoryStream().add(new Characteristic(description));
@@ -285,80 +775,283 @@ public class SimulationService {
 	    throw new SmallvilleException("Must create an agent before changing the state");
 	}
 
-	SimulationTime.update();
+	exclusively(SimulationTime::update);
 
-	for (Agent agent : world.getAgents()) {
-	    try {
-		prompts.updateAgent(agent);
-	    } catch (Exception e) {
-		LOG.error("Failed to update agent " + agent.getFullName() + ", skipping for this tick", e);
-	    }
+	// Locked per agent rather than across the whole tick. A tick is several
+	// sequential LLM calls per agent and can run for minutes; holding the
+	// lock throughout would make Reset or Add Agent block for that long. The
+	// agent update is the meaningful atomic unit anyway, and releasing
+	// between agents lets a control action land cleanly in the gap.
+	List<String> names = world.getAgents().stream().map(Agent::getFullName).collect(Collectors.toList());
+
+	for (String name : names) {
+	    exclusively(() -> {
+		// May have been deleted, or the whole world reset, while an
+		// earlier agent in this same tick was still being updated.
+		Optional<Agent> agent = world.getAgent(name);
+
+		if (agent.isEmpty()) {
+		    LOG.info("Agent " + name + " disappeared mid-tick, skipping");
+		    return;
+		}
+
+		try {
+		    prompts.updateAgent(agent.get());
+		} catch (Exception e) {
+		    LOG.error("Failed to update agent " + name + ", skipping for this tick", e);
+		}
+	    });
 	}
 
-	triggerProximityReactions();
+	exclusively(this::triggerGroupConversations);
+	exclusively(this::maybeDeliverAnEvent);
     }
 
     /**
-     * Nothing else in the update pipeline notices when two agents end up in the
-     * same location - conversations only ever happen if something explicitly
-     * feeds an agent a reactable observation. This is that missing nudge: after
-     * every tick, check for co-located agents and give each pair a chance to
-     * notice each other and start talking.
+     * Picks whether the next thing to happen is good, bad, or unreadable.
+     * <p>
+     * Weighted rather than even, and decided here rather than by the model.
+     * Left to the model the mix is whatever it happens to lean toward, which is
+     * neither known nor adjustable - and this ratio is most of what decides
+     * what kind of town this is. Bad leads because it is what creates pressure:
+     * good news is a moment, bad news is a problem that persists, and something
+     * unreadable is a problem that has not arrived yet.
      */
-    private void triggerProximityReactions() {
-	List<Agent> agents = world.getAgents();
+    private Concern.Valence rollValence() {
+	GeneralConfig config = SmallvilleConfig.getConfig();
+	double bad = Math.max(0, config.getBadEventWeight());
+	double ambiguous = Math.max(0, config.getAmbiguousEventWeight());
+	double good = Math.max(0, config.getGoodEventWeight());
+	double total = bad + ambiguous + good;
 
-	// Caps each agent to at most one proximity reaction per tick. Without this,
-	// a location with k co-located agents triggers k*(k-1)/2 full reaction
-	// chains (one per pair) - with several agents clustered together that
-	// turns a single tick into a very long queue of sequential LLM calls.
-	Set<String> reactedThisTick = new HashSet<>();
+	if (total <= 0) {
+	    return Concern.Valence.AMBIGUOUS;
+	}
 
-	for (int i = 0; i < agents.size(); i++) {
-	    for (int j = i + 1; j < agents.size(); j++) {
-		Agent a = agents.get(i);
-		Agent b = agents.get(j);
+	double roll = random.nextDouble() * total;
 
-		if (reactedThisTick.contains(a.getFullName()) || reactedThisTick.contains(b.getFullName())) {
-		    continue;
-		}
+	if (roll < bad) {
+	    return Concern.Valence.BAD;
+	}
 
-		if (a.getLocation() == null || b.getLocation() == null) {
-		    continue;
-		}
+	return roll < bad + ambiguous ? Concern.Valence.AMBIGUOUS : Concern.Valence.GOOD;
+    }
 
-		if (!a.getLocation().getFullPath().equals(b.getLocation().getFullPath())) {
-		    continue;
-		}
+    /**
+     * Occasionally lets something from outside the town land on somebody.
+     * <p>
+     * This is where wanting comes from. Nothing inside the simulation is ever at
+     * stake on its own - agents move, talk and form opinions, but nobody needs
+     * anything they might not get, so nothing can turn. Rather than modelling an
+     * economy for that, a fact simply arrives and the agent has to live with it.
+     * <p>
+     * Rare on purpose. A town where something happens to somebody roughly once a
+     * day is a town; one where everybody gets news every morning is a soap
+     * opera, and the events stop landing.
+     */
+    private void maybeDeliverAnEvent() {
+	double perDay = SmallvilleConfig.getConfig().getEventsPerSimulatedDay();
 
-		String pairKey = pairKey(a.getFullName(), b.getFullName());
-		LocalDateTime lastTime = lastConversationAt.get(pairKey);
-		LocalDateTime now = SimulationTime.now();
+	if (perDay <= 0) {
+	    return;
+	}
 
-		if (lastTime != null && Duration.between(lastTime, now).compareTo(CONVERSATION_COOLDOWN) < 0) {
-		    continue;
-		}
+	double ticksPerDay = Math.max(1, Duration.ofDays(1).toMinutes() / (double) SimulationTime
+	    .getStepDurationInMinutes());
 
-		lastConversationAt.put(pairKey, now);
-		reactedThisTick.add(a.getFullName());
-		reactedThisTick.add(b.getFullName());
+	if (random.nextDouble() >= perDay / ticksPerDay) {
+	    return;
+	}
 
-		try {
-		    // Deliberately just the name, not the other agent's activity text -
-		    // that text is agent-authored and can itself mention names (including
-		    // this agent's own), which confuses the downstream name-extraction
-		    // logic used to figure out who the observation is about.
-		    prompts.react(a, b.getFullName() + " is here.");
-		} catch (Exception e) {
-		    LOG.error("Failed to trigger proximity reaction between " + a.getFullName() + " and "
-			    + b.getFullName(), e);
-		}
+	// One thing at a time. Somebody already carrying something is not
+	// eligible, or it stacks into melodrama.
+	List<Agent> eligible = world
+	    .getAgents()
+	    .stream()
+	    .filter(agent -> agent.getMemoryStream().getActiveConcerns().isEmpty())
+	    .collect(Collectors.toList());
+
+	if (eligible.isEmpty()) {
+	    return;
+	}
+
+	Agent unlucky = eligible.get(random.nextInt(eligible.size()));
+
+	try {
+	    prompts.deliverEvent(unlucky, rollValence());
+	} catch (Exception e) {
+	    LOG.error("Failed to deliver an event to " + unlucky.getFullName(), e);
+	}
+    }
+
+    private static final int MAX_GROUP_PARTICIPANTS = 5;
+
+    /**
+     * Nothing else in the update pipeline notices when several agents end up in
+     * the same location - conversations only ever happen if something
+     * explicitly feeds an agent a reactable observation. This is that missing
+     * nudge.
+     * <p>
+     * Whether a conversation actually happens is decided by the agents rather
+     * than by the clock. Previously any two co-located agents talked on a fixed
+     * hourly cooldown, forever, whatever else was true - which in a town where
+     * people spend all day in the same place is a metronome, not a social
+     * model. Now a pair is more likely to talk if they have never met, if
+     * something has happened to either of them since they last spoke, and if
+     * they get on; and agents who are asleep do not talk at all.
+     */
+    private void triggerGroupConversations() {
+	Map<String, List<Agent>> byLocation = new HashMap<>();
+
+	for (Agent agent : world.getAgents()) {
+	    if (agent.getLocation() == null || isAsleep(agent)) {
+		continue;
+	    }
+
+	    byLocation.computeIfAbsent(agent.getLocation().getFullPath(), k -> new ArrayList<>()).add(agent);
+	}
+
+	for (Map.Entry<String, List<Agent>> entry : byLocation.entrySet()) {
+	    String location = entry.getKey();
+	    List<Agent> here = entry.getValue();
+	    LocalDateTime now = SimulationTime.now();
+
+	    if (here.size() < 2) {
+		continue;
+	    }
+
+	    // A floor, not the mechanism: it only stops the same room producing
+	    // a fresh conversation on consecutive ticks.
+	    LocalDateTime lastTime = lastConversationAt.get(location);
+
+	    if (lastTime != null && Duration.between(lastTime, now).compareTo(conversationFloor()) < 0) {
+		continue;
+	    }
+
+	    List<Agent> participants = chooseParticipants(here);
+
+	    if (participants.isEmpty()) {
+		continue;
+	    }
+
+	    lastConversationAt.put(location, now);
+
+	    try {
+		prompts.triggerGroupConversation(participants, "Everyone listed is gathered here together right now.");
+	    } catch (Exception e) {
+		LOG.error("Failed to trigger group conversation at " + location, e);
 	    }
 	}
     }
 
-    private String pairKey(String a, String b) {
-	return a.compareTo(b) < 0 ? a + "|" + b : b + "|" + a;
+    /**
+     * Picks who talks, or returns empty if nobody feels like it this tick.
+     */
+    private List<Agent> chooseParticipants(List<Agent> here) {
+	List<Agent> shuffled = new ArrayList<>(here);
+	Collections.shuffle(shuffled, random);
+
+	Agent initiator = shuffled.get(0);
+	Agent partner = null;
+	double bestUrge = -1;
+
+	// The initiator talks to whoever they most have reason to talk to,
+	// rather than to whoever the iteration order happened to reach first.
+	for (int i = 1; i < shuffled.size(); i++) {
+	    double urge = conversationUrge(initiator, shuffled.get(i));
+
+	    if (urge > bestUrge) {
+		bestUrge = urge;
+		partner = shuffled.get(i);
+	    }
+	}
+
+	if (partner == null || random.nextDouble() >= bestUrge) {
+	    return List.of();
+	}
+
+	List<Agent> selected = new ArrayList<>(List.of(initiator, partner));
+
+	for (Agent other : shuffled) {
+	    if (selected.size() >= MAX_GROUP_PARTICIPANTS) {
+		break;
+	    }
+
+	    if (selected.contains(other)) {
+		continue;
+	    }
+
+	    // Someone joins a conversation in progress based on how they feel
+	    // about the people already in it.
+	    double urge = selected
+		.stream()
+		.mapToDouble(member -> conversationUrge(member, other))
+		.average()
+		.orElse(0);
+
+	    if (random.nextDouble() < urge) {
+		selected.add(other);
+	    }
+	}
+
+	return selected;
+    }
+
+    /**
+     * How strongly these two would start talking right now, as a probability.
+     */
+    private double conversationUrge(Agent a, Agent b) {
+	Relationship relationship = world.getRelationships().get(a.getFullName(), b.getFullName());
+
+	if (!relationship.haveMet()) {
+	    // Strangers in the same room almost always introduce themselves.
+	    return 0.9;
+	}
+
+	// Warmth pulls both ways: people who get on talk more, people who don't
+	// avoid each other.
+	double warmth = (relationship.affinity() + 1) / 2;
+	double novelty = noveltySince(relationship.lastSpokeAt(), a, b);
+	double urge = 0.1 + (0.45 * novelty) + (0.35 * warmth);
+
+	return Math.max(0.02, Math.min(0.95, urge));
+    }
+
+    /**
+     * How much has happened to either agent since they last spoke, saturating
+     * at a handful of new memories. Two people who have just talked and done
+     * nothing since have little reason to start again.
+     */
+    private double noveltySince(LocalDateTime lastSpokeAt, Agent a, Agent b) {
+	if (lastSpokeAt == null) {
+	    return 1;
+	}
+
+	long fresh = Stream
+	    .concat(a.getMemoryStream().getMemories().stream(), b.getMemoryStream().getMemories().stream())
+	    .filter(memory -> memory instanceof TemporalMemory)
+	    .filter(memory -> ((TemporalMemory) memory).getTime().isAfter(lastSpokeAt))
+	    .count();
+
+	return Math.min(1, fresh / 6.0);
+    }
+
+    /**
+     * Whether the agent is asleep, judged from the activity text the model
+     * wrote. Nothing in the model marks sleep explicitly, and without this
+     * check agents hold conversations in the middle of the night.
+     */
+    private static boolean isAsleep(Agent agent) {
+	String activity = agent.getCurrentActivity();
+
+	if (activity == null) {
+	    return false;
+	}
+
+	String lower = activity.toLowerCase();
+
+	return lower.contains("sleep") || lower.contains("asleep") || lower.contains("dozing")
+		|| lower.contains("napping") || lower.contains("in bed");
     }
 
     public List<ConversationGroupResponse> getAllConversations() {
@@ -388,15 +1081,29 @@ public class SimulationService {
 	SimulationTime.setStep(duration);
     }
 
-    public int getProgress() {
-	return progress;
-    }
-
     public void setState(String location, String state) {
-	world.setState(location, state);
+	exclusively(() -> world.setState(location, state));
     }
 
-    Map<UUID, MemoryStream> memories = new HashMap<UUID, MemoryStream>();
+    private static final int MAX_STANDALONE_STREAMS = 100;
+
+    /**
+     * Standalone memory streams for the client libraries, which use the server
+     * as a memory store without running a simulation.
+     * <p>
+     * Bounded and access-ordered: these are created by an endpoint with no
+     * matching delete, so an unbounded map here is a leak that grows for as
+     * long as the server runs.
+     */
+    private final Map<UUID, MemoryStream> memories = Collections
+	.synchronizedMap(new LinkedHashMap<UUID, MemoryStream>(16, 0.75f, true) {
+	    private static final long serialVersionUID = 1L;
+
+	    @Override
+	    protected boolean removeEldestEntry(Map.Entry<UUID, MemoryStream> eldest) {
+		return size() > MAX_STANDALONE_STREAMS;
+	    }
+	});
 
     public UUID createMemoryStream() {
 	UUID uuid = UUID.randomUUID();
@@ -406,7 +1113,11 @@ public class SimulationService {
 
     public List<String> getMemories(UUID uuid, String query) {
 	MemoryStream stream = memories.get(uuid);
-	
+
+	if (stream == null) {
+	    throw new SmallvilleException("No memory stream with id " + uuid);
+	}
+
 	return stream
 	    .getRelevantMemories(query)
 	    .stream()

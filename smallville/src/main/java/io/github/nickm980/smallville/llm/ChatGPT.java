@@ -1,10 +1,9 @@
 package io.github.nickm980.smallville.llm;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.Semaphore;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
@@ -12,8 +11,10 @@ import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import io.github.nickm980.smallville.Settings;
+import io.github.nickm980.smallville.config.GeneralConfig;
 import io.github.nickm980.smallville.config.SmallvilleConfig;
 import io.github.nickm980.smallville.events.EventBus;
 import io.github.nickm980.smallville.events.llm.PromptReceievedEvent;
@@ -27,120 +28,116 @@ import okhttp3.Response;
 public class ChatGPT implements LLM {
     private final static Logger LOG = LoggerFactory.getLogger(ChatGPT.class);
     private final static ObjectMapper MAPPER = new ObjectMapper();
+
+    /**
+     * One client for the whole process. A new OkHttpClient per request builds
+     * a fresh connection pool and dispatcher thread each time and throws away
+     * the previous one, so nothing is ever reused - and this is called several
+     * times per agent per tick.
+     */
+    private final static OkHttpClient CLIENT = new OkHttpClient.Builder()
+	.connectTimeout(10, TimeUnit.SECONDS)
+	.writeTimeout(3, TimeUnit.MINUTES)
+	.readTimeout(3, TimeUnit.MINUTES)
+	.build();
+
     private final EventBus events = EventBus.getEventBus();
+
+    /**
+     * Cheap calls go to the smaller model when one is configured. Ranking
+     * memories, choosing an activity and judging tone are classification, not
+     * the creative work the larger model is worth paying for.
+     */
+    private static String modelFor(PromptRequest prompt, GeneralConfig config) {
+	String cheap = config.getCheapModel();
+
+	if (prompt.isCheap() && cheap != null && !cheap.isBlank()) {
+	    return cheap;
+	}
+
+	return config.getModel();
+    }
     
     @Override
     public String sendChat(PromptRequest prompt, double temperature) {
 	int maxRetries = SmallvilleConfig.getConfig().getMaxRetries();
 	int retryCount = 0;
-	String result = null;
-
-	ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
-	Semaphore semaphore = new Semaphore(0);
 
 	while (retryCount < maxRetries) {
+	    // Pausing the simulation calls shutdownNow(), which interrupts this
+	    // thread mid-request. That is a cancellation, not a failure worth
+	    // retrying - the old loop retried anyway and then swallowed the
+	    // InterruptedException from its own sleep, so every pause burned
+	    // through the full retry budget logging stack traces.
+	    if (Thread.currentThread().isInterrupted()) {
+		throw new SmallvilleException("Request cancelled");
+	    }
+
 	    try {
-		result = attemptRequest(prompt, temperature);
-		break;
+		return attemptRequest(prompt, temperature);
+	    } catch (InterruptedIOException e) {
+		Thread.currentThread().interrupt();
+		throw new SmallvilleException("Request cancelled");
 	    } catch (IOException | SmallvilleException e) {
 		retryCount++;
 		LOG.error("Request failed. Retrying... (Attempt " + retryCount + ")", e);
 
-		executor.schedule(() -> semaphore.release(), 2, TimeUnit.SECONDS);
+		if (retryCount >= maxRetries) {
+		    break;
+		}
 
+		// Exponential backoff. A flat 2s retry against a rate limit
+		// mostly just spends the budget faster.
 		try {
-		    semaphore.acquire();
+		    Thread.sleep(1000L * (1L << retryCount));
 		} catch (InterruptedException ex) {
 		    Thread.currentThread().interrupt();
+		    throw new SmallvilleException("Request cancelled");
 		}
 	    }
 	}
 
-	executor.shutdownNow();
-
-	if (result == null) {
-	    LOG.error("Failed to get a successful response after " + maxRetries + " attempts.");
-	    throw new SmallvilleException("Failed to get a successful response.");
-	}
-
-	return result;
+	LOG.error("Failed to get a successful response after " + maxRetries + " attempts.");
+	throw new SmallvilleException("Failed to get a successful response.");
     }
 
     
-    @Override
-    public float[] getTokenEmbeddings(String text) {
-	OkHttpClient client = new OkHttpClient();
-	ObjectMapper mapper = new ObjectMapper();
-	float[] result = new float[0];
-
-	try {
-	    // Create the request body
-	    JsonNode requestBody = mapper.createObjectNode().put("model", "text-embedding-ada-002").put("input", text);
-
-	    Request request = new Request.Builder()
-		.url("https://api.openai.com/v1/embeddings")
-		.post(RequestBody
-		    .create(mapper.writeValueAsString(requestBody), okhttp3.MediaType.parse("application/json")))
-		.addHeader("Authorization", "Bearer " + Settings.getApiKey())
-		.build();
-
-	    Response response = client.newCall(request).execute();
-	    String responseBody = response.body().string();
-	    JsonNode responseJson = mapper.readTree(responseBody);
-
-	    result = mapper.convertValue(responseJson.get("data").get(0).get("embedding"), float[].class);
-	} catch (IOException e) {
-	    e.printStackTrace();
-	}
-
-	return result;
-    }
-
     private String attemptRequest(PromptRequest prompt, double temperature) throws IOException, SmallvilleException {
 	long start = System.currentTimeMillis();
 
-	OkHttpClient client = new OkHttpClient.Builder()
-	    .connectTimeout(10, TimeUnit.SECONDS)
-	    .writeTimeout(3, TimeUnit.MINUTES)
-	    .readTimeout(3, TimeUnit.MINUTES)
-	    .build();
+	GeneralConfig config = SmallvilleConfig.getConfig();
 
-	String json = """
-		{
-			"model": "%model",
-			"messages": [%messages],
-			"temperature": %temperature, "max_tokens": 2000
+	// Built with Jackson rather than spliced into a string template. The
+	// template approach silently produced invalid JSON whenever a
+	// substitution was missed - the function-calling branch did exactly
+	// that, emitting a literal "%functions" - and it has now been dropped
+	// since nothing ever called setFunction.
+	ObjectNode payload = MAPPER.createObjectNode();
+	payload.put("model", modelFor(prompt, config));
+	payload.set("messages", MAPPER.valueToTree(List.of(prompt.build())));
+	payload.put("temperature", temperature);
+	payload.put("max_tokens", 8000);
 
-		""";
-
-	if (prompt.isFunctional()) {
-	    json += """
-	    	,
-	    	"functions": %functions,
-	    	"function_call": {"name": "%function_name"}
-	    	""";
+	if (prompt.isJsonResponse()) {
+	    payload.set("response_format", MAPPER.createObjectNode().put("type", "json_object"));
 	}
 
-	json += "}";
-	json = json.replaceAll("\t", "");
-	json = json.strip();
-	if (prompt.isFunctional()) {
-//	    json = json
-//		.replace("%functions", MAPPER.writeValueAsString(SmallvilleConfig.getFunctions().get("functions")));
-
-	    json = json.replace("%function_name", prompt.getFunction());
+	// Left off entirely unless configured. Reasoning tokens bill as output
+	// and almost nothing here benefits from deliberation, but the disable
+	// value is not documented on the pages describing the feature, so the
+	// safe default is to send nothing and let this be set deliberately.
+	if (config.getThinking() != null && !config.getThinking().isBlank()) {
+	    payload.set("thinking", MAPPER.createObjectNode().put("type", config.getThinking()));
 	}
 
-	json = json.replace("%messages", MAPPER.writeValueAsString(prompt.build()));
-	json = json.replace("%temperature", String.valueOf(temperature));
-	json = json.replace("%model", SmallvilleConfig.getConfig().getModel());
+	String json = MAPPER.writeValueAsString(payload);
 
 	LOG.debug("[Chat Request Original]" + json);
 	LOG.debug("[Chat Request]" + prompt.getContent());
 
 	RequestBody body = RequestBody.create(json.getBytes(StandardCharsets.UTF_8));
 	Request request = new Request.Builder()
-	    .url(SmallvilleConfig.getConfig().getApiPath())
+	    .url(config.getApiPath())
 	    .addHeader("Content-Type", "application/json")
 	    .addHeader("Authorization", "Bearer " + Settings.getApiKey())
 	    .post(body)
@@ -148,11 +145,10 @@ public class ChatGPT implements LLM {
 
 	String result = "";
 
-	Response response = client.newCall(request).execute();
+	Response response = CLIENT.newCall(request).execute();
 	String responseBody = response.body().string();
 
-	ObjectMapper objectMapper = new ObjectMapper();
-	JsonNode node = objectMapper.readTree(responseBody);
+	JsonNode node = MAPPER.readTree(responseBody);
 
 	if (node.get("choices") == null) {
 	    LOG.debug(node.toPrettyString());
@@ -160,15 +156,9 @@ public class ChatGPT implements LLM {
 		    "Invalid api token, rate limit reached, or the LLM is overloaded with requests.");
 	}
 
-	
 	result = node.get("choices").get(0).get("message").get("content").asText();
 
-	try {
-	    Object res = node.get("choices").get(0).get("message").get("function_call").get("arguments");
-	    LOG.info(res.toString());
-	} catch (Exception e) {
-
-	}
+	UsageTracker.record(prompt.getLabel(), TokenUsage.from(node));
 
 	LOG.debug("[Chat Response]" + node.get("choices").toPrettyString());
 

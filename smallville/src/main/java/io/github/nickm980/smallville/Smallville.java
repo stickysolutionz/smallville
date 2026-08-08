@@ -33,6 +33,12 @@ public class Smallville {
 
 	Settings.setApiKey(key);
 
+	if (options.getSeed() != null) {
+	    Settings.setSeed(options.getSeed());
+	}
+
+	LOG.info("Simulation seed: " + Settings.getSeed() + " (pass --seed to replay this run)");
+
 	loadConfig();
 	Updater.checkLatestVersion();
 	

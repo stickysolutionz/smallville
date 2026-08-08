@@ -48,18 +48,30 @@ public class UpdateConversation extends AgentUpdate {
 
 	Conversation conversation = converter.getConversationIfExists(agent, other, observation);
 
-	List<Observation> memories = conversation
-	    .getDialog()
-	    .stream()
-	    .map(dialog -> {
-		Observation dialogMemory = new Observation(dialog.getMessage());
-		dialogMemory.setDialog(true);
-		return dialogMemory;
-	    })
-	    .collect(Collectors.toList());
+	if (conversation.size() == 0) {
+	    // Same failure the group path guards against: no dialogue parsed out
+	    // of the response, so there is nothing to record. Skipping beats
+	    // letting World's empty-conversation error escape the tick.
+	    LOG.warn("[Conversation] No dialogue came back for " + agent.getFullName() + " and "
+		    + other.getFullName() + ", skipping");
+	    return false;
+	}
 
-	agent.getMemoryStream().addAll(memories);
-	other.getMemoryStream().addAll(memories);
+	// Per participant, not shared - see the matching comment in
+	// UpdateService.triggerGroupConversation.
+	for (Agent participant : List.of(agent, other)) {
+	    List<Observation> memories = conversation
+		.getDialog()
+		.stream()
+		.map(dialog -> {
+		    Observation dialogMemory = new Observation(dialog.asMemoryFor(participant.getFullName()));
+		    dialogMemory.setDialog(true);
+		    return dialogMemory;
+		})
+		.collect(Collectors.toList());
+
+	    participant.getMemoryStream().addAll(memories);
+	}
 
 	world.create(conversation);
 	return false;

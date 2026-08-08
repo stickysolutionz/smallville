@@ -72,6 +72,11 @@ public class PromptBuilder {
 	return this;
     }
 
+    public PromptBuilder withOthers(List<Agent> others) {
+	data.put("others", others.stream().map(prompts::fromAgent).collect(java.util.stream.Collectors.toList()));
+	return this;
+    }
+
     public PromptBuilder withWorld(World world) {
 	data.put("world", WorldModel.fromWorld(agent.getFullName(), world));
 
@@ -89,6 +94,15 @@ public class PromptBuilder {
 
     public PromptBuilder withObservation(String observation) {
 	data.put("observation", observation);
+	return this;
+    }
+
+    /**
+     * Sets an arbitrary template value, for prompts that aren't about one
+     * agent - the story recap and character generation.
+     */
+    public PromptBuilder with(String key, Object value) {
+	data.put(key, value);
 	return this;
     }
 

@@ -4,6 +4,7 @@ public class LocationStateResponse {
 
     private String name;
     private String state;
+    private boolean hasImage;
 
     public String getName() {
 	return name;
@@ -19,5 +20,13 @@ public class LocationStateResponse {
 
     public void setState(String state) {
 	this.state = state;
+    }
+
+    public boolean isHasImage() {
+	return hasImage;
+    }
+
+    public void setHasImage(boolean hasImage) {
+	this.hasImage = hasImage;
     }
 }
